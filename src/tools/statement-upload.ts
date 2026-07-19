@@ -31,9 +31,17 @@ function accountId(idOrUrl: string): string {
   return idOrUrl.startsWith("http") ? extractIdFromUrl(idOrUrl) : idOrUrl;
 }
 
+/** Injectable for tests; real uploads wait between verification polls. */
+export const defaultSleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Poll delays for the post-upload verification (FreeAgent imports async). */
+const VERIFY_DELAYS_MS = [3000, 6000, 9000];
+
 export async function uploadBankStatement(
   client: FreeAgentApiClient,
-  params: UploadBankStatementInput
+  params: UploadBankStatementInput,
+  sleep: (ms: number) => Promise<void> = defaultSleep
 ): Promise<string> {
   const account = accountId(params.bank_account);
 
@@ -48,16 +56,37 @@ export async function uploadBankStatement(
     return row;
   });
 
+  // FreeAgent processes statement imports ASYNCHRONOUSLY, so querying
+  // last_uploaded=true straight after the POST races the import and can
+  // return the PREVIOUS upload (observed live, 19 Jul 2026). Instead:
+  // snapshot the affected date range before uploading, then poll the same
+  // range afterwards and diff by transaction ID. New IDs = this upload.
+  const dates = params.transactions.map((t) => t.dated_on).sort();
+  const range = { bank_account: account, from_date: dates[0], to_date: dates[dates.length - 1], per_page: 100 };
+
+  const before = await client.get<{ bank_transactions: UploadedTransaction[] }>(
+    "/bank_transactions",
+    range
+  );
+  const preExisting = new Set((before.data.bank_transactions ?? []).map((t) => t.url));
+
   await client.post(`/bank_transactions/statement?bank_account=${account}`, {
     statement,
   });
 
-  // The upload endpoint's 200 does not confirm the import. Verify what landed.
-  const check = await client.get<{ bank_transactions: UploadedTransaction[] }>(
-    "/bank_transactions",
-    { bank_account: account, last_uploaded: true, per_page: 100 }
-  );
-  const imported = check.data.bank_transactions ?? [];
+  let imported: UploadedTransaction[] = [];
+  for (const delayMs of VERIFY_DELAYS_MS) {
+    await sleep(delayMs);
+    const check = await client.get<{ bank_transactions: UploadedTransaction[] }>(
+      "/bank_transactions",
+      range
+    );
+    imported = (check.data.bank_transactions ?? []).filter((t) => !preExisting.has(t.url));
+    // Stop early once every sent row is accounted for; a shortfall may just
+    // mean the import is still processing, so keep polling until the delays
+    // are exhausted before concluding rows were de-duplicated away.
+    if (imported.length >= params.transactions.length) break;
+  }
 
   const lines = [
     `✅ Statement uploaded to bank account ${account}.`,
@@ -76,7 +105,13 @@ export async function uploadBankStatement(
   if (imported.length < params.transactions.length) {
     lines.push(
       "",
-      `⚠️ ${params.transactions.length - imported.length} row(s) appear to have been dropped by FreeAgent's de-duplication (same date + amount + description as an existing transaction). To add a deliberate same-day twin, re-send it with a slightly different description or a unique fitid.`
+      `⚠️ ${params.transactions.length - imported.length} row(s) did not appear within the verification window. The most likely cause is FreeAgent's silent de-duplication (same date + amount + description as an existing transaction) — to add a deliberate same-day twin, re-send with a different description. A slow import is also possible: re-check with freeagent_list_bank_transactions for the affected dates before re-sending.`
+    );
+  }
+  if (imported.length > params.transactions.length) {
+    lines.push(
+      "",
+      `⚠️ More new transactions appeared in the date range than were sent (${imported.length} vs ${params.transactions.length}). Another upload or bank feed may have landed concurrently; review the table above.`
     );
   }
 

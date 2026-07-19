@@ -263,7 +263,7 @@ export const toolDefinitions: ToolDefinition[] = [
     description: "Add bank transactions to an account via statement upload. WARNING: FreeAgent silently de-duplicates rows matching an existing transaction's date+amount+description; vary the description or set a unique fitid to add deliberate same-day twins. The tool verifies the import and reports dropped rows. Confirm with the user before calling.",
     inputSchema: UploadBankStatementInputSchema.shape,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
-    handler: uploadBankStatement,
+    handler: (apiClient, params) => uploadBankStatement(apiClient, params),
   },
   {
     name: "freeagent_delete_bank_transaction_explanation",
