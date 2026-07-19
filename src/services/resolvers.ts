@@ -40,10 +40,27 @@ export async function resolveCategory(
   if (hint.startsWith("http")) return hint;
 
   if (/^\d+$/.test(hint)) {
-    const response = await client.get<{ category: FreeAgentCategory }>(
+    // GET /categories/:nominal_code wraps the result under a key that depends
+    // on the category's type (income_categories, admin_expenses_categories,
+    // ...), NOT under "category" (dev.freeagent.com/docs/categories). Accept
+    // any of the known keys, tolerating both object and single-element array.
+    const response = await client.get<Record<string, FreeAgentCategory | FreeAgentCategory[] | undefined>>(
       `/categories/${hint}`
     );
-    return response.data.category.url;
+    const wrapped =
+      response.data.category ??
+      response.data.income_categories ??
+      response.data.cost_of_sales_categories ??
+      response.data.admin_expenses_categories ??
+      response.data.general_categories;
+    const category = Array.isArray(wrapped) ? wrapped[0] : wrapped;
+    if (!category?.url) {
+      throw new Error(
+        `Category ${hint} was returned in an unrecognised shape. ` +
+        `Pass the category name or full URL instead, or check dev.freeagent.com/docs/categories.`
+      );
+    }
+    return category.url;
   }
 
   const response = await client.get<CategoryListResponse>("/categories");
