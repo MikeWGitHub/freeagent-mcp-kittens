@@ -10,6 +10,7 @@ import type {
   ListPriceListItemsInput,
   GetPriceListItemInput,
   CreatePriceListItemInput,
+  UpdatePriceListItemInput,
 } from "../schemas/index.js";
 import {
   formatResponse,
@@ -118,6 +119,41 @@ export async function createPriceListItem(
   return (
     `✅ Created price list item ${id}\n\n` +
     `**Description**: ${item.description}\n` +
+    `**Type**: ${item.item_type}\n` +
+    `**Price**: ${item.price}\n` +
+    `**URL**: ${item.url}`
+  );
+}
+
+/**
+ * Update an existing price list (catalog) item. Only provided fields change.
+ */
+export async function updatePriceListItem(
+  client: FreeAgentApiClient,
+  params: UpdatePriceListItemInput
+): Promise<string> {
+  const id = params.price_list_item_id.startsWith("http")
+    ? extractIdFromUrl(params.price_list_item_id)
+    : params.price_list_item_id;
+
+  const { price_list_item_id: _itemId, ...fields } = params;
+  void _itemId;
+  const itemData: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(fields)) {
+    if (value !== undefined) itemData[key] = value;
+  }
+  if (Object.keys(itemData).length === 0) {
+    throw new Error("No fields to update: provide at least one updatable field.");
+  }
+
+  const response = await client.put<{ price_list_item: FreeAgentPriceListItem }>(
+    `/price_list_items/${id}`,
+    { price_list_item: itemData }
+  );
+  const item = response.data.price_list_item;
+
+  return (
+    `\u2705 Price list item "${item.description}" updated (ID: ${id})\n\n` +
     `**Type**: ${item.item_type}\n` +
     `**Price**: ${item.price}\n` +
     `**URL**: ${item.url}`

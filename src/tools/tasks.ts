@@ -1,7 +1,7 @@
 import { FreeAgentApiClient } from "../services/api-client.js";
 import { ResponseFormat } from "../constants.js";
 import type { FreeAgentTask } from "../types.js";
-import type { ListTasksInput, GetTaskInput, CreateTaskInput } from "../schemas/index.js";
+import type { ListTasksInput, GetTaskInput, CreateTaskInput, UpdateTaskInput } from "../schemas/index.js";
 
 /**
  * List all tasks in FreeAgent
@@ -115,4 +115,39 @@ export async function createTask(
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+/**
+ * Update an existing task. Only provided fields are changed.
+ */
+export async function updateTask(
+  apiClient: FreeAgentApiClient,
+  params: UpdateTaskInput
+): Promise<string> {
+  const id = params.task_id.startsWith("http")
+    ? params.task_id.split("/").pop()!
+    : params.task_id;
+
+  const { task_id: _taskId, ...fields } = params;
+  void _taskId;
+  const taskData: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(fields)) {
+    if (value !== undefined) taskData[key] = value;
+  }
+  if (Object.keys(taskData).length === 0) {
+    throw new Error("No fields to update: provide at least one updatable field.");
+  }
+
+  const response = await apiClient.put<{ task: FreeAgentTask }>(
+    `/tasks/${id}`,
+    { task: taskData }
+  );
+  const task = response.data.task;
+
+  return (
+    `\u2705 Task "${task.name}" updated (ID: ${id})\n\n` +
+    `**Status**: ${task.status}\n` +
+    `**Billable**: ${task.is_billable}\n` +
+    `**URL**: ${task.url}`
+  );
 }

@@ -345,6 +345,226 @@ export interface FreeAgentPriceListItem {
   updated_at?: string;
 }
 
+export interface FreeAgentCreditNoteItem {
+  url?: string;
+  position?: number;
+  item_type?: string;
+  description: string;
+  price?: string;
+  quantity?: string;
+  sales_tax_rate?: string;
+  sales_tax_status?: string;
+  category?: string;
+  project?: string;
+  stock_item?: string;
+}
+
+export interface FreeAgentCreditNote {
+  url: string;
+  contact: string;
+  project?: string;
+  dated_on: string;
+  due_on?: string;
+  reference?: string;
+  currency?: string;
+  exchange_rate?: string;
+  net_value?: string;
+  sales_tax_value?: string;
+  total_value?: string;
+  refunded_value?: string;
+  due_value?: string;
+  status?: string;
+  long_status?: string;
+  comments?: string;
+  discount_percent?: string;
+  po_reference?: string;
+  ec_status?: string;
+  payment_terms_in_days?: number;
+  refunded_on?: string;
+  written_off_date?: string;
+  credit_note_items?: FreeAgentCreditNoteItem[];
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface FreeAgentDepreciationProfile {
+  method: string;
+  asset_life_years?: number;
+  annual_depreciation_percentage?: number;
+  frequency?: string;
+}
+
+export interface FreeAgentCapitalAssetHistoryEvent {
+  type?: string;
+  description?: string;
+  date?: string;
+  value?: string;
+  tax_value?: string;
+  link?: string;
+}
+
+export interface FreeAgentCapitalAsset {
+  url: string;
+  description?: string;
+  asset_type?: string;
+  depreciation_profile?: FreeAgentDepreciationProfile;
+  asset_life_years?: number;
+  purchased_on?: string;
+  disposed_on?: string;
+  capital_asset_history?: FreeAgentCapitalAssetHistoryEvent[];
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface FreeAgentCapitalAssetType {
+  url: string;
+  name: string;
+  system_default?: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface FreeAgentStockItem {
+  url: string;
+  description?: string;
+  opening_quantity?: number;
+  opening_balance?: string;
+  cost_of_sale_category?: string;
+  stock_on_hand?: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface FreeAgentNote {
+  url: string;
+  note: string;
+  parent_url?: string;
+  author?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface FreeAgentAttachment {
+  url: string;
+  content_src?: string;
+  content_src_medium?: string;
+  content_src_small?: string;
+  expires_at?: string;
+  content_type?: string;
+  file_name?: string;
+  file_size?: number;
+  description?: string;
+}
+
+/** Shared shape for Final Accounts Reports and Corporation Tax Returns. */
+export interface FreeAgentAnnualReturn {
+  url: string;
+  period_starts_on?: string;
+  period_ends_on: string;
+  filing_due_on?: string;
+  filing_status?: string;
+  filed_at?: string;
+  filed_reference?: string;
+  amount_due?: string;
+  payment_due_on?: string;
+  payment_status?: string;
+}
+
+export interface FreeAgentVatReturnPayment {
+  label?: string;
+  due_on?: string;
+  amount_due?: string;
+  status?: string;
+}
+
+export interface FreeAgentVatReturnBreakdownRow {
+  title?: string;
+  value?: string;
+  key?: string;
+  box_number?: string;
+}
+
+export interface FreeAgentVatReturn {
+  url: string;
+  period_starts_on?: string;
+  period_ends_on: string;
+  filing_due_on?: string;
+  filing_status?: string;
+  filed_at?: string;
+  filed_reference?: string;
+  payments?: FreeAgentVatReturnPayment[];
+  breakdown?: {
+    title?: string;
+    rows?: FreeAgentVatReturnBreakdownRow[];
+  };
+}
+
+export interface FreeAgentSalesTaxPeriod {
+  url: string;
+  sales_tax_name?: string;
+  sales_tax_registration_status?: string;
+  sales_tax_registration_number?: string;
+  sales_tax_rate_1?: string;
+  sales_tax_rate_2?: string;
+  sales_tax_rate_3?: string;
+  sales_tax_is_value_added?: boolean;
+  effective_date?: string;
+  is_locked?: boolean;
+  locked_reason?: string;
+}
+
+export interface FreeAgentLedgerTransaction {
+  url: string;
+  dated_on: string;
+  description?: string;
+  category?: string;
+  category_name?: string;
+  nominal_code?: string;
+  debit_value?: string;
+  source_item_url?: string;
+  foreign_currency_data?: {
+    currency_code?: string;
+    debit_value?: string;
+  };
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface FreeAgentProfitAndLossSummary {
+  from?: string;
+  to?: string;
+  income?: string;
+  expenses?: string;
+  operating_profit?: string;
+  less?: Array<{ title?: string; total?: string }>;
+  retained_profit?: string;
+  retained_profit_brought_forward?: string;
+  retained_profit_carried_forward?: string;
+}
+
+export interface FreeAgentTrialBalanceRow {
+  category?: string;
+  nominal_code?: string;
+  display_nominal_code?: string;
+  name?: string;
+  total?: string;
+  bank_account?: string;
+  user?: string;
+}
+
+export interface FreeAgentCashflowSide {
+  total?: string;
+  months?: Array<{ month?: number; year?: number; total?: string }>;
+}
+
+export interface FreeAgentCashflow {
+  from?: string;
+  to?: string;
+  incoming?: FreeAgentCashflowSide;
+  outgoing?: FreeAgentCashflowSide;
+  balance?: string;
+}
+
 export interface FreeAgentApiErrorItem {
   message?: string;
   [key: string]: unknown;

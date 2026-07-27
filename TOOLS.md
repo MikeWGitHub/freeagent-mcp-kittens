@@ -195,10 +195,12 @@ Moves a FreeAgent invoice between lifecycle states. Wraps `PUT /v2/invoices/:id/
 - `invoice_id` (string, required): The FreeAgent invoice ID (numeric) or full URL
 - `action` (string, required): One of `mark_as_sent`, `mark_as_cancelled`, `mark_as_draft`, `mark_as_scheduled`, `convert_to_credit_note`
 
+**CAUTION on `mark_as_cancelled`:** per the FreeAgent API docs this WRITES OFF a sent invoice as unpaid — it does not merely void it. The invoice must be sent with a past due date, the write-off has accounting consequences (observed live: invoice 142 written off in error while its payment sat unexplained, Apr 2026), and reversing it via the API is undocumented — the web UI can remove a write-off. `mark_as_sent` re-opens a *cancelled* invoice.
+
 **Example usage:**
 ```
 Mark invoice 123 as sent
-Cancel invoice 456
+Write off invoice 456 as unpaid (mark_as_cancelled)
 Convert invoice 789 to a credit note
 ```
 
@@ -1365,3 +1367,74 @@ Intent bundles are cross-resource tools that collapse a multi-call sequence into
 | `freeagent_invoice_from_timeslips` | `list_projects` → `list_timeslips` → `get_task` (per task) → `create_invoice` → `update_timeslip` (per timeslip) | [Invoice Management](#invoice-management) |
 
 All three resolve human-friendly hints (names, codes, references) to canonical FreeAgent URLs server-side, and surface suggestion-rich errors when a hint is ambiguous or matches nothing.
+
+---
+
+## Coverage Expansion (July 2026)
+
+The following tools were added in the account-coverage expansion. Full parameter schemas for each are discoverable at runtime via `freeagent_search_tools` (e.g. `select:freeagent_list_credit_notes`); the notes here cover intent and constraints rather than repeating every field.
+
+### Credit notes (read-only)
+
+| Tool | Purpose |
+|---|---|
+| `freeagent_list_credit_notes` | List credit notes (filter by view/contact/project; optional nested line items). Use to trace invoice cancellation chains directly instead of inferring from `long_status`. |
+| `freeagent_get_credit_note` | One credit note with amounts, refund state, PO reference, and line items. |
+
+### Accounting reports (read-only)
+
+| Tool | Purpose |
+|---|---|
+| `freeagent_get_profit_and_loss` | P&L summary for a period (must fit within one accounting year, or pass `accounting_period` like `2025/26`). |
+| `freeagent_get_balance_sheet` | Balance sheet as at a date; `opening_balances: true` for the fixed opening position. |
+| `freeagent_get_trial_balance` | Per-category totals with nominal codes; markdown output verifies the rows sum to zero. The natural sanity check after journal or reconciliation work. |
+| `freeagent_get_cashflow` | Historic incoming/outgoing totals with monthly breakdown. No projections. |
+
+### General ledger (read-only)
+
+| Tool | Purpose |
+|---|---|
+| `freeagent_list_ledger_transactions` | The double-entry postings behind documents. Filter by date range (max 12 months, one accounting year) and/or `nominal_code`. |
+| `freeagent_get_ledger_transaction` | One posting, including its source document URL. |
+
+### Capital assets (read-only register)
+
+| Tool | Purpose |
+|---|---|
+| `freeagent_list_capital_assets` | The asset register. Assets are CREATED by explaining a transaction/bill/expense against a capital asset sub-category (e.g. `602-1`), optionally with a nested `depreciation_profile` — now supported on explanation create/update. |
+| `freeagent_get_capital_asset` | One asset with depreciation profile and lifecycle history. |
+| `freeagent_list_capital_asset_types` | System and custom asset types. |
+
+### Statutory returns (read-only — deliberately no filing writes)
+
+| Tool | Purpose |
+|---|---|
+| `freeagent_list_final_accounts_reports` / `freeagent_get_final_accounts_report` | Final Accounts periods with filing status. Keyed by `period_ends_on` date. |
+| `freeagent_list_corporation_tax_returns` / `freeagent_get_corporation_tax_return` | CT returns with `amount_due`. IoM workflow: read the amount, sanity check, zero it with `freeagent_create_journal_set`. |
+| `freeagent_list_vat_returns` / `freeagent_get_vat_return` | VAT returns with payments (negative `amount_due` = refund) and box-by-box breakdown. |
+| `freeagent_list_sales_tax_periods` | Registration periods, rates, effective dates. |
+
+The API's `mark_as_filed` / `mark_as_paid` transitions are intentionally NOT exposed: filing state stays under manual control.
+
+### Stock, attachments, notes, users, email addresses
+
+| Tool | Purpose |
+|---|---|
+| `freeagent_list_stock_items` / `freeagent_get_stock_item` | Stock items with quantity on hand (API is read-only). |
+| `freeagent_get_attachment` | Attachment metadata + time-limited download URLs (no list endpoint exists; IDs surface on parent resources). |
+| `freeagent_delete_attachment` | Permanently delete an attached file. Requires `confirm: true`; reply records what was removed. |
+| `freeagent_list_notes` / `freeagent_create_note` / `freeagent_update_note` / `freeagent_delete_note` | Notes on a contact OR project (exactly one). The natural home for audit-trail commentary. Delete requires `confirm: true`. |
+| `freeagent_get_user` | One user by ID, URL, or `me`. |
+| `freeagent_list_email_addresses` | Verified sender addresses. |
+
+### Update tools for existing resources
+
+| Tool | Purpose |
+|---|---|
+| `freeagent_update_invoice` | Dates, references, comments, discount, contact, line items (add without `id`; modify with `id`; remove with `id` + `_destroy: 1`). Status changes still go through `freeagent_transition_invoice`. |
+| `freeagent_update_bill` | Same pattern for supplier bills. |
+| `freeagent_update_project` | Name, status, budget, billing, dates, PO reference. |
+| `freeagent_update_task` | Name, status, billing. |
+| `freeagent_update_price_list_item` | Catalog item fields. |
+
+There is intentionally no `freeagent_update_contact` (rarely needed; manual correction in the web UI is fine) and no invoice email/send tool (drafting is not sending).

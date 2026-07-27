@@ -1,7 +1,7 @@
 import { FreeAgentApiClient } from "../services/api-client.js";
 import { ResponseFormat } from "../constants.js";
 import type { FreeAgentProject } from "../types.js";
-import type { ListProjectsInput, GetProjectInput, CreateProjectInput } from "../schemas/index.js";
+import type { ListProjectsInput, GetProjectInput, CreateProjectInput, UpdateProjectInput } from "../schemas/index.js";
 
 /**
  * List all projects in FreeAgent
@@ -130,4 +130,39 @@ export async function createProject(
     `  Budget: ${project.budget} ${project.budget_units}`,
     `  Currency: ${project.currency}`,
   ].join("\n");
+}
+
+/**
+ * Update an existing project. Only provided fields are changed.
+ */
+export async function updateProject(
+  apiClient: FreeAgentApiClient,
+  params: UpdateProjectInput
+): Promise<string> {
+  const id = params.project_id.startsWith("http")
+    ? params.project_id.split("/").pop()!
+    : params.project_id;
+
+  const { project_id: _projectId, ...fields } = params;
+  void _projectId;
+  const projectData: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(fields)) {
+    if (value !== undefined) projectData[key] = value;
+  }
+  if (Object.keys(projectData).length === 0) {
+    throw new Error("No fields to update: provide at least one updatable field.");
+  }
+
+  const response = await apiClient.put<{ project: FreeAgentProject }>(
+    `/projects/${id}`,
+    { project: projectData }
+  );
+  const project = response.data.project;
+
+  return (
+    `\u2705 Project "${project.name}" updated (ID: ${id})\n\n` +
+    `**Status**: ${project.status}\n` +
+    `**Budget**: ${project.budget} ${project.budget_units}\n` +
+    `**URL**: ${project.url}`
+  );
 }

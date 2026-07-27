@@ -241,6 +241,11 @@ export async function createBankTransactionExplanation(
     explanationPayload.transfer_bank_account = params.transfer_bank_account;
   }
 
+  // Capital asset depreciation profile
+  if (params.depreciation_profile) {
+    explanationPayload.depreciation_profile = params.depreciation_profile;
+  }
+
   // Add attachment if provided
   if (params.attachment) {
     let attachmentData = params.attachment.data;
@@ -337,6 +342,11 @@ export async function updateBankTransactionExplanation(
   // Transfer information
   if (updateFields.transfer_bank_account !== undefined) {
     explanationPayload.transfer_bank_account = updateFields.transfer_bank_account;
+  }
+
+  // Capital asset depreciation profile
+  if (updateFields.depreciation_profile !== undefined) {
+    explanationPayload.depreciation_profile = updateFields.depreciation_profile;
   }
 
   const response = await client.put<{ bank_transaction_explanation: FreeAgentBankTransactionExplanation }>(

@@ -11,6 +11,7 @@ import type {
   ListBillsInput,
   GetBillInput,
   CreateBillInput,
+  UpdateBillInput,
 } from "../schemas/index.js";
 import {
   formatResponse,
@@ -148,6 +149,44 @@ export async function createBill(
     `**Total**: ${bill.currency ?? "GBP"} ${bill.total_value}\n` +
     (bill.reference ? `**Reference**: ${bill.reference}\n` : "") +
     `**Contact**: ${bill.contact}\n` +
+    `**URL**: ${bill.url}`
+  );
+}
+
+/**
+ * Update an existing supplier bill. Line items are added (no id), modified
+ * (id + fields), or removed (id + _destroy: 1).
+ */
+export async function updateBill(
+  client: FreeAgentApiClient,
+  params: UpdateBillInput
+): Promise<string> {
+  const id = params.bill_id.startsWith("http")
+    ? extractIdFromUrl(params.bill_id)
+    : params.bill_id;
+
+  const billData: Record<string, unknown> = {};
+  if (params.contact !== undefined) {
+    billData.contact = params.contact.startsWith("http")
+      ? params.contact
+      : `https://api.freeagent.com/v2/contacts/${params.contact}`;
+  }
+  for (const key of ["reference", "dated_on", "due_on", "comments", "bill_items"] as const) {
+    if (params[key] !== undefined) billData[key] = params[key];
+  }
+
+  if (Object.keys(billData).length === 0) {
+    throw new Error("No fields to update: provide at least one updatable field.");
+  }
+
+  const response = await client.put<{ bill: FreeAgentBill }>(`/bills/${id}`, { bill: billData });
+  const bill = response.data.bill;
+
+  return (
+    `✅ Bill ${bill.reference ?? id} updated (ID: ${id})\n\n` +
+    `**Status**: ${bill.status ?? "-"}\n` +
+    `**Date**: ${bill.dated_on}\n` +
+    `**Total**: ${bill.currency ?? "GBP"} ${bill.total_value}\n` +
     `**URL**: ${bill.url}`
   );
 }

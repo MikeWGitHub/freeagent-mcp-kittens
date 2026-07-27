@@ -570,6 +570,20 @@ export const GetBankTransactionExplanationInputSchema = z.object({
   response_format: ResponseFormatSchema
 }).strict();
 
+// Nested depreciation profile for capital asset purchases explained through a
+// bank transaction. FreeAgent has no standalone depreciation profile endpoint;
+// the profile rides on the explanation (or bill/expense) that creates the asset.
+export const DepreciationProfileSchema = z.object({
+  method: z.enum(["straight_line", "reducing_balance", "no_depreciation"])
+    .describe("Depreciation method. straight_line needs asset_life_years; reducing_balance needs annual_depreciation_percentage."),
+  asset_life_years: z.number().int().min(2).max(25).optional()
+    .describe("Years until the asset is fully depreciated (straight_line only, 2-25)."),
+  annual_depreciation_percentage: z.number().int().min(1).max(99).optional()
+    .describe("Annual reduction percentage (reducing_balance only, 1-99)."),
+  frequency: z.enum(["monthly", "annually"]).optional()
+    .describe("Posting frequency for depreciation journals (default monthly).")
+}).strict();
+
 export const CreateBankTransactionExplanationInputSchema = z.object({
   bank_transaction: z.string()
     .min(1)
@@ -621,6 +635,10 @@ export const CreateBankTransactionExplanationInputSchema = z.object({
   transfer_bank_account: z.string()
     .optional()
     .describe("Destination bank account URL or ID for transfers"),
+  // Capital asset depreciation (when the category is a capital asset category, e.g. 602-1)
+  depreciation_profile: DepreciationProfileSchema
+    .optional()
+    .describe("Depreciation profile when this explanation creates a capital asset (category must be a capital asset sub-category like '602-1')."),
   // Attachment
   attachment: AttachmentSchema
     .optional()
@@ -679,7 +697,11 @@ export const UpdateBankTransactionExplanationInputSchema = z.object({
   // Transfer information
   transfer_bank_account: z.string()
     .optional()
-    .describe("Destination bank account URL or ID for transfers")
+    .describe("Destination bank account URL or ID for transfers"),
+  // Capital asset depreciation
+  depreciation_profile: DepreciationProfileSchema
+    .optional()
+    .describe("Depreciation profile when this explanation creates/updates a capital asset (category must be a capital asset sub-category like '602-1'). Assets created with a depreciation_profile can only be updated with one.")
 }).strict();
 
 export const UpdateTimeslipInputSchema = z.object({
@@ -1172,3 +1194,363 @@ export type UpdateJournalSetInput = z.infer<typeof UpdateJournalSetInputSchema>;
 export type DeleteJournalSetInput = z.infer<typeof DeleteJournalSetInputSchema>;
 export type UploadBankStatementInput = z.infer<typeof UploadBankStatementInputSchema>;
 export type DeleteBankTransactionExplanationInput = z.infer<typeof DeleteBankTransactionExplanationInputSchema>;
+
+// ---------------------------------------------------------------------------
+// Credit notes (fork addition: read access to the other half of invoicing)
+// ---------------------------------------------------------------------------
+
+export const ListCreditNotesInputSchema = z.object({
+  page: PaginationSchema.shape.page,
+  per_page: PaginationSchema.shape.per_page,
+  view: z.enum(["all", "recent_open_or_overdue", "open", "overdue", "open_or_overdue", "draft", "refunded"])
+    .optional()
+    .describe("Filter credit notes by status view"),
+  contact: z.string().optional().describe("Filter by contact URL or ID"),
+  project: z.string().optional().describe("Filter by project URL or ID"),
+  sort: z.enum(["created_at", "updated_at"])
+    .optional()
+    .describe("Field to sort by (prefix with '-' for descending)"),
+  nested_credit_note_items: z.boolean()
+    .default(false)
+    .describe("Include full line items for each credit note in the listing (heavier response)"),
+  response_format: ResponseFormatSchema
+}).strict();
+
+export const GetCreditNoteInputSchema = z.object({
+  credit_note_id: z.string()
+    .min(1)
+    .describe("The FreeAgent credit note ID (numeric) or full URL"),
+  response_format: ResponseFormatSchema
+}).strict();
+
+// ---------------------------------------------------------------------------
+// Capital assets (fork addition; read-only in the FreeAgent API)
+// ---------------------------------------------------------------------------
+
+export const ListCapitalAssetsInputSchema = z.object({
+  page: PaginationSchema.shape.page,
+  per_page: PaginationSchema.shape.per_page,
+  view: z.enum(["all", "disposed", "disposable"])
+    .optional()
+    .describe("Filter assets: all, already disposed, or currently disposable"),
+  include_history: z.boolean()
+    .default(false)
+    .describe("Include each asset's lifecycle events (purchase, depreciation, allowances, disposal)"),
+  response_format: ResponseFormatSchema
+}).strict();
+
+export const GetCapitalAssetInputSchema = z.object({
+  capital_asset_id: z.string()
+    .min(1)
+    .describe("The FreeAgent capital asset ID (numeric) or full URL"),
+  include_history: z.boolean()
+    .default(true)
+    .describe("Include the asset's lifecycle events (purchase, depreciation, allowances, disposal)"),
+  response_format: ResponseFormatSchema
+}).strict();
+
+export const ListCapitalAssetTypesInputSchema = z.object({
+  response_format: ResponseFormatSchema
+}).strict();
+
+// ---------------------------------------------------------------------------
+// Accounting reports (fork addition: P&L, balance sheet, trial balance, cashflow)
+// ---------------------------------------------------------------------------
+
+export const GetProfitAndLossInputSchema = z.object({
+  from_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
+    .describe("Period start (YYYY-MM-DD). Defaults to the current accounting year start."),
+  to_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
+    .describe("Period end (YYYY-MM-DD). Defaults to today. Range must fit within one accounting year."),
+  accounting_period: z.string().regex(/^\d{4}\/\d{2}$/).optional()
+    .describe("Alternative to from_date/to_date: a whole accounting year, e.g. '2025/26'."),
+  response_format: ResponseFormatSchema
+}).strict();
+
+export const GetBalanceSheetInputSchema = z.object({
+  as_at_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
+    .describe("Balance sheet as at this date (YYYY-MM-DD). Defaults to today."),
+  opening_balances: z.boolean().default(false)
+    .describe("Return the company's fixed opening balances instead (ignores as_at_date)."),
+  response_format: ResponseFormatSchema
+}).strict();
+
+export const GetTrialBalanceInputSchema = z.object({
+  from_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
+    .describe("Period start (YYYY-MM-DD). Omit with to_date set to run from the accounting period start."),
+  to_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
+    .describe("Period end (YYYY-MM-DD). Omit both dates for a summary as at today."),
+  opening_balances: z.boolean().default(false)
+    .describe("Return opening balances instead of the period summary (ignores dates)."),
+  response_format: ResponseFormatSchema
+}).strict();
+
+export const GetCashflowInputSchema = z.object({
+  from_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
+    .describe("Period start (YYYY-MM-DD)."),
+  to_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
+    .describe("Period end (YYYY-MM-DD). Future-dated requests return 0 (no projections)."),
+  response_format: ResponseFormatSchema
+}).strict();
+
+// ---------------------------------------------------------------------------
+// Statutory returns, read-only (fork addition). Deliberately NO filing or
+// mark-as-filed/paid writes: filing decisions stay with the user.
+// ---------------------------------------------------------------------------
+
+export const ListFinalAccountsReportsInputSchema = z.object({
+  response_format: ResponseFormatSchema
+}).strict();
+
+export const GetFinalAccountsReportInputSchema = z.object({
+  period_ends_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+    .describe("The accounting period end date identifying the report (YYYY-MM-DD)"),
+  response_format: ResponseFormatSchema
+}).strict();
+
+export const ListCorporationTaxReturnsInputSchema = z.object({
+  response_format: ResponseFormatSchema
+}).strict();
+
+export const GetCorporationTaxReturnInputSchema = z.object({
+  period_ends_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+    .describe("The accounting period end date identifying the return (YYYY-MM-DD)"),
+  response_format: ResponseFormatSchema
+}).strict();
+
+export const ListVatReturnsInputSchema = z.object({
+  response_format: ResponseFormatSchema
+}).strict();
+
+export const GetVatReturnInputSchema = z.object({
+  period_ends_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+    .describe("The VAT period end date identifying the return (YYYY-MM-DD)"),
+  response_format: ResponseFormatSchema
+}).strict();
+
+export const ListSalesTaxPeriodsInputSchema = z.object({
+  response_format: ResponseFormatSchema
+}).strict();
+
+// ---------------------------------------------------------------------------
+// General ledger transactions (fork addition: the double-entry behind it all)
+// ---------------------------------------------------------------------------
+
+export const ListLedgerTransactionsInputSchema = z.object({
+  page: PaginationSchema.shape.page,
+  per_page: PaginationSchema.shape.per_page,
+  from_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
+    .describe("Filter postings dated on or after this date (YYYY-MM-DD). Range must not exceed 12 months or span accounting years."),
+  to_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
+    .describe("Filter postings dated on or before this date (YYYY-MM-DD)."),
+  nominal_code: z.string().optional()
+    .describe("Filter to a single category by nominal code (e.g. '001', '285')"),
+  response_format: ResponseFormatSchema
+}).strict();
+
+export const GetLedgerTransactionInputSchema = z.object({
+  transaction_id: z.string().min(1)
+    .describe("The accounting transaction ID (numeric) or full URL"),
+  response_format: ResponseFormatSchema
+}).strict();
+
+// ---------------------------------------------------------------------------
+// Stock items (read-only in the FreeAgent API)
+// ---------------------------------------------------------------------------
+
+export const ListStockItemsInputSchema = z.object({
+  page: PaginationSchema.shape.page,
+  per_page: PaginationSchema.shape.per_page,
+  sort: z.enum(["created_at", "updated_at", "description"])
+    .optional()
+    .describe("Field to sort by (prefix with '-' for descending)"),
+  response_format: ResponseFormatSchema
+}).strict();
+
+export const GetStockItemInputSchema = z.object({
+  stock_item_id: z.string().min(1)
+    .describe("The FreeAgent stock item ID (numeric) or full URL"),
+  response_format: ResponseFormatSchema
+}).strict();
+
+// ---------------------------------------------------------------------------
+// Email addresses, users, attachments, notes (fork additions)
+// ---------------------------------------------------------------------------
+
+export const ListEmailAddressesInputSchema = z.object({
+  response_format: ResponseFormatSchema
+}).strict();
+
+export const GetUserInputSchema = z.object({
+  user_id: z.string().min(1)
+    .describe("The FreeAgent user ID (numeric), full URL, or 'me' for the authenticated user"),
+  response_format: ResponseFormatSchema
+}).strict();
+
+export const GetAttachmentInputSchema = z.object({
+  attachment_id: z.string().min(1)
+    .describe("The FreeAgent attachment ID (numeric) or full URL"),
+  response_format: ResponseFormatSchema
+}).strict();
+
+export const DeleteAttachmentInputSchema = z.object({
+  attachment_id: z.string().min(1)
+    .describe("The FreeAgent attachment ID (numeric) or full URL to delete"),
+  confirm: z.literal(true)
+    .describe("Must be exactly true. Acknowledges this permanently deletes the attached file.")
+}).strict();
+
+// NOTE: no .refine() here — register.ts consumes Schema.shape, which ZodEffects
+// (the result of .refine) does not expose. The exactly-one-parent rule is
+// enforced in the handlers instead.
+export const ListNotesInputSchema = z.object({
+  contact: z.string().optional().describe("Contact URL or ID whose notes to list. Provide exactly one of contact or project."),
+  project: z.string().optional().describe("Project URL or ID whose notes to list. Provide exactly one of contact or project."),
+  response_format: ResponseFormatSchema
+}).strict();
+
+export const CreateNoteInputSchema = z.object({
+  contact: z.string().optional().describe("Contact URL or ID to attach the note to. Provide exactly one of contact or project."),
+  project: z.string().optional().describe("Project URL or ID to attach the note to. Provide exactly one of contact or project."),
+  note: z.string().min(1).describe("The content of the note")
+}).strict();
+
+export const UpdateNoteInputSchema = z.object({
+  note_id: z.string().min(1).describe("The FreeAgent note ID (numeric) or full URL"),
+  note: z.string().min(1).describe("Replacement content for the note")
+}).strict();
+
+export const DeleteNoteInputSchema = z.object({
+  note_id: z.string().min(1).describe("The FreeAgent note ID (numeric) or full URL to delete"),
+  confirm: z.literal(true)
+    .describe("Must be exactly true. Acknowledges this permanently deletes the note.")
+}).strict();
+
+// ---------------------------------------------------------------------------
+// Update tools for existing resources (fork additions)
+// ---------------------------------------------------------------------------
+
+export const UpdateInvoiceItemSchema = z.object({
+  id: z.string().optional()
+    .describe("ID of an existing invoice item to modify or remove. Omit to add a new item."),
+  _destroy: z.literal(1).optional()
+    .describe("Set to 1 (with id) to delete that line item."),
+  item_type: z.string().optional()
+    .describe("Hours, Days, Weeks, Months, Years, Products, Services, Training, Expenses, Comment, Bills, Discount, Credit, Stock, VAT"),
+  description: z.string().optional(),
+  price: z.string().optional().describe("Unit price (decimal string)"),
+  quantity: z.string().optional().describe("Quantity (decimal string)"),
+  sales_tax_rate: z.string().optional().describe("Sales tax rate percentage (e.g. '20.0')"),
+  sales_tax_status: z.enum(["TAXABLE", "EXEMPT", "OUT_OF_SCOPE"]).optional(),
+  category: z.string().optional().describe("Category URL or nominal code for the line item")
+}).strict();
+
+export const UpdateInvoiceInputSchema = z.object({
+  invoice_id: z.string().min(1)
+    .describe("The FreeAgent invoice ID (numeric) or full URL"),
+  contact: z.string().optional().describe("New contact URL or ID"),
+  dated_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("New invoice date (YYYY-MM-DD)"),
+  due_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("New due date (YYYY-MM-DD)"),
+  payment_terms_in_days: z.number().int().optional(),
+  reference: z.string().optional().describe("New invoice reference"),
+  po_reference: z.string().optional().describe("New PO reference"),
+  comments: z.string().optional(),
+  discount_percent: z.string().optional(),
+  invoice_items: z.array(UpdateInvoiceItemSchema).optional()
+    .describe("Line items to add (no id), modify (id + fields), or remove (id + _destroy: 1). Status changes are NOT possible here; use freeagent_transition_invoice.")
+}).strict();
+
+export const UpdateBillItemSchema = z.object({
+  id: z.string().optional()
+    .describe("ID of an existing bill item to modify or remove. Omit to add a new item."),
+  _destroy: z.literal(1).optional()
+    .describe("Set to 1 (with id) to delete that line item."),
+  category: z.string().optional().describe("Category URL or nominal code"),
+  description: z.string().optional(),
+  total_value: z.string().optional().describe("Gross value of the line (decimal string)"),
+  sales_tax_rate: z.string().optional().describe("Sales tax rate percentage (e.g. '20.0')"),
+  sales_tax_status: z.enum(["TAXABLE", "EXEMPT", "OUT_OF_SCOPE"]).optional()
+}).strict();
+
+export const UpdateBillInputSchema = z.object({
+  bill_id: z.string().min(1)
+    .describe("The FreeAgent bill ID (numeric) or full URL"),
+  contact: z.string().optional().describe("New contact URL or ID"),
+  reference: z.string().optional(),
+  dated_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("New bill date (YYYY-MM-DD)"),
+  due_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("New due date (YYYY-MM-DD)"),
+  comments: z.string().optional(),
+  bill_items: z.array(UpdateBillItemSchema).optional()
+    .describe("Line items to add (no id), modify (id + fields), or remove (id + _destroy: 1).")
+}).strict();
+
+export const UpdateProjectInputSchema = z.object({
+  project_id: z.string().min(1)
+    .describe("The FreeAgent project ID (numeric) or full URL"),
+  name: z.string().optional(),
+  status: z.enum(["Active", "Completed", "Cancelled", "Hidden"]).optional(),
+  budget: z.string().optional().describe("Budget amount (decimal string)"),
+  budget_units: z.enum(["Hours", "Days", "Monetary"]).optional(),
+  normal_billing_rate: z.string().optional(),
+  billing_period: z.enum(["hour", "day"]).optional(),
+  hours_per_day: z.string().optional(),
+  starts_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  ends_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  contract_po_reference: z.string().optional(),
+  is_ir35: z.boolean().optional()
+}).strict();
+
+export const UpdateTaskInputSchema = z.object({
+  task_id: z.string().min(1)
+    .describe("The FreeAgent task ID (numeric) or full URL"),
+  name: z.string().optional(),
+  status: z.enum(["Active", "Completed", "Hidden"]).optional(),
+  is_billable: z.boolean().optional(),
+  billing_rate: z.string().optional(),
+  billing_period: z.enum(["hour", "day"]).optional()
+}).strict();
+
+export const UpdatePriceListItemInputSchema = z.object({
+  price_list_item_id: z.string().min(1)
+    .describe("The FreeAgent price list item ID (numeric) or full URL"),
+  description: z.string().optional(),
+  item_type: z.string().optional()
+    .describe("Hours, Days, Weeks, Months, Years, Products, Services, Training, Expenses, Stock"),
+  price: z.string().optional().describe("Unit price (decimal string)"),
+  sales_tax_rate: z.string().optional().describe("Sales tax rate percentage (e.g. '20.0')"),
+  category: z.string().optional().describe("Category URL or nominal code")
+}).strict();
+
+export type ListCreditNotesInput = z.infer<typeof ListCreditNotesInputSchema>;
+export type GetCreditNoteInput = z.infer<typeof GetCreditNoteInputSchema>;
+export type ListCapitalAssetsInput = z.infer<typeof ListCapitalAssetsInputSchema>;
+export type GetCapitalAssetInput = z.infer<typeof GetCapitalAssetInputSchema>;
+export type ListCapitalAssetTypesInput = z.infer<typeof ListCapitalAssetTypesInputSchema>;
+export type GetProfitAndLossInput = z.infer<typeof GetProfitAndLossInputSchema>;
+export type GetBalanceSheetInput = z.infer<typeof GetBalanceSheetInputSchema>;
+export type GetTrialBalanceInput = z.infer<typeof GetTrialBalanceInputSchema>;
+export type GetCashflowInput = z.infer<typeof GetCashflowInputSchema>;
+export type ListFinalAccountsReportsInput = z.infer<typeof ListFinalAccountsReportsInputSchema>;
+export type GetFinalAccountsReportInput = z.infer<typeof GetFinalAccountsReportInputSchema>;
+export type ListCorporationTaxReturnsInput = z.infer<typeof ListCorporationTaxReturnsInputSchema>;
+export type GetCorporationTaxReturnInput = z.infer<typeof GetCorporationTaxReturnInputSchema>;
+export type ListVatReturnsInput = z.infer<typeof ListVatReturnsInputSchema>;
+export type GetVatReturnInput = z.infer<typeof GetVatReturnInputSchema>;
+export type ListSalesTaxPeriodsInput = z.infer<typeof ListSalesTaxPeriodsInputSchema>;
+export type ListLedgerTransactionsInput = z.infer<typeof ListLedgerTransactionsInputSchema>;
+export type GetLedgerTransactionInput = z.infer<typeof GetLedgerTransactionInputSchema>;
+export type ListStockItemsInput = z.infer<typeof ListStockItemsInputSchema>;
+export type GetStockItemInput = z.infer<typeof GetStockItemInputSchema>;
+export type ListEmailAddressesInput = z.infer<typeof ListEmailAddressesInputSchema>;
+export type GetUserInput = z.infer<typeof GetUserInputSchema>;
+export type GetAttachmentInput = z.infer<typeof GetAttachmentInputSchema>;
+export type DeleteAttachmentInput = z.infer<typeof DeleteAttachmentInputSchema>;
+export type ListNotesInput = z.infer<typeof ListNotesInputSchema>;
+export type CreateNoteInput = z.infer<typeof CreateNoteInputSchema>;
+export type UpdateNoteInput = z.infer<typeof UpdateNoteInputSchema>;
+export type DeleteNoteInput = z.infer<typeof DeleteNoteInputSchema>;
+export type UpdateInvoiceInput = z.infer<typeof UpdateInvoiceInputSchema>;
+export type UpdateBillInput = z.infer<typeof UpdateBillInputSchema>;
+export type UpdateProjectInput = z.infer<typeof UpdateProjectInputSchema>;
+export type UpdateTaskInput = z.infer<typeof UpdateTaskInputSchema>;
+export type UpdatePriceListItemInput = z.infer<typeof UpdatePriceListItemInputSchema>;

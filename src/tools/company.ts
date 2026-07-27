@@ -9,7 +9,7 @@ import {
   formatResponse,
   truncateIfNeeded
 } from "../services/formatter.js";
-import type { GetCompanyInput, ListUsersInput } from "../schemas/index.js";
+import type { GetCompanyInput, ListUsersInput, GetUserInput, ListEmailAddressesInput } from "../schemas/index.js";
 
 /**
  * Get company information
@@ -89,4 +89,55 @@ export async function listUsers(
   );
 
   return truncateIfNeeded(formattedResponse, { count: users.length });
+}
+
+/**
+ * Get a single user by ID, URL, or 'me' (the authenticated user).
+ */
+export async function getUser(
+  client: FreeAgentApiClient,
+  params: GetUserInput
+): Promise<string> {
+  const endpoint = params.user_id === "me"
+    ? "/users/me"
+    : params.user_id.startsWith("http")
+      ? params.user_id.replace(/^https?:\/\/[^/]+\/v2/, "")
+      : `/users/${params.user_id}`;
+
+  const response = await client.get<{ user: FreeAgentUser }>(endpoint);
+  const user = response.data.user;
+
+  return formatResponse({ user }, params.response_format, () => {
+    const lines: string[] = [
+      `# User: ${user.first_name} ${user.last_name}`,
+      "",
+      `- **Email**: ${user.email}`,
+      `- **Role**: ${user.role}`,
+      `- **Permission level**: ${user.permission_level}`,
+      `- **URL**: ${user.url}`,
+    ];
+    return lines.join("\n");
+  });
+}
+
+/**
+ * List the account's verified sender email addresses (the addresses
+ * FreeAgent is allowed to send invoices/estimates from).
+ */
+export async function listEmailAddresses(
+  client: FreeAgentApiClient,
+  params: ListEmailAddressesInput
+): Promise<string> {
+  const response = await client.get<{ email_addresses: string[] }>("/email_addresses");
+  const addresses = response.data.email_addresses ?? [];
+
+  return formatResponse({ email_addresses: addresses }, params.response_format, () => {
+    const lines: string[] = ["# Verified Sender Email Addresses", ""];
+    if (addresses.length === 0) {
+      lines.push("No verified sender email addresses found.");
+    } else {
+      for (const address of addresses) lines.push(`- ${address}`);
+    }
+    return lines.join("\n");
+  });
 }

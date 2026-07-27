@@ -17,7 +17,8 @@ import {
 import type {
   ListInvoicesInput,
   GetInvoiceInput,
-  CreateInvoiceInput
+  CreateInvoiceInput,
+  UpdateInvoiceInput
 } from "../schemas/index.js";
 
 /**
@@ -384,5 +385,53 @@ export async function createInvoice(
     `Total: ${formatCurrency(invoice.total_value, invoice.currency)}\n` +
     `URL: ${invoice.url}\n\n` +
     `Note: Invoice is created in Draft status. Use status transition endpoints to mark as Sent.`
+  );
+}
+
+/**
+ * Update an existing invoice. Status changes are NOT possible here — use
+ * freeagent_transition_invoice for those. Line items are added (no id),
+ * modified (id + fields), or removed (id + _destroy: 1).
+ */
+export async function updateInvoice(
+  client: FreeAgentApiClient,
+  params: UpdateInvoiceInput
+): Promise<string> {
+  const id = params.invoice_id.startsWith("http")
+    ? extractIdFromUrl(params.invoice_id)
+    : params.invoice_id;
+
+  const { invoice_id: _invoiceId, ...fields } = params;
+  void _invoiceId;
+  const invoiceData: Record<string, unknown> = {};
+
+  if (fields.contact !== undefined) {
+    invoiceData.contact = fields.contact.startsWith("http")
+      ? fields.contact
+      : `https://api.freeagent.com/v2/contacts/${fields.contact}`;
+  }
+  for (const key of [
+    "dated_on", "due_on", "payment_terms_in_days", "reference", "po_reference",
+    "comments", "discount_percent", "invoice_items",
+  ] as const) {
+    if (fields[key] !== undefined) invoiceData[key] = fields[key];
+  }
+
+  if (Object.keys(invoiceData).length === 0) {
+    throw new Error("No fields to update: provide at least one updatable field.");
+  }
+
+  const response = await client.put<{ invoice: FreeAgentInvoice }>(
+    `/invoices/${id}`,
+    { invoice: invoiceData }
+  );
+  const invoice = response.data.invoice;
+
+  return (
+    `✅ Invoice ${invoice.reference ?? id} updated (ID: ${id})\n\n` +
+    `**Status**: ${invoice.status}\n` +
+    `**Date**: ${invoice.dated_on}\n` +
+    `**Total**: ${formatCurrency(invoice.total_value, invoice.currency)}\n` +
+    `**URL**: ${invoice.url}`
   );
 }

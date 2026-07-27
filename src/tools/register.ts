@@ -9,25 +9,39 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ElicitRequestFormParams, ElicitResult } from "@modelcontextprotocol/sdk/types.js";
 import { FreeAgentApiClient, formatErrorForLLM } from "../services/api-client.js";
 import { listContacts, getContact, createContact } from "./contacts.js";
-import { listInvoices, getInvoice, createInvoice } from "./invoices.js";
+import { listInvoices, getInvoice, createInvoice, updateInvoice } from "./invoices.js";
+import { listCreditNotes, getCreditNote } from "./credit-notes.js";
+import { listCapitalAssets, getCapitalAsset, listCapitalAssetTypes } from "./capital-assets.js";
+import { getProfitAndLoss, getBalanceSheet, getTrialBalance, getCashflow } from "./reports.js";
+import {
+  listFinalAccountsReports, getFinalAccountsReport,
+  listCorporationTaxReturns, getCorporationTaxReturn,
+  listVatReturns, getVatReturn, listSalesTaxPeriods,
+} from "./tax-returns.js";
+import { listLedgerTransactions, getLedgerTransaction } from "./ledger.js";
+import {
+  listStockItems, getStockItem,
+  getAttachment, deleteAttachment,
+  listNotes, createNote, updateNote, deleteNote,
+} from "./stock-attachments-notes.js";
 import { invoiceFromTimeslips } from "./invoice-from-timeslips.js";
 import { transitionInvoice } from "./transition-invoice.js";
 import { listEstimates, getEstimate, createEstimate, transitionEstimate } from "./estimates.js";
 import { listRecurringInvoices, getRecurringInvoice } from "./recurring-invoices.js";
-import { listPriceListItems, getPriceListItem, createPriceListItem } from "./price-list-items.js";
+import { listPriceListItems, getPriceListItem, createPriceListItem, updatePriceListItem } from "./price-list-items.js";
 import { listExpenses, getExpense, createExpense, updateExpense } from "./expenses.js";
 import { logExpense } from "./log-expense.js";
-import { listBills, getBill, createBill } from "./bills.js";
+import { listBills, getBill, createBill, updateBill } from "./bills.js";
 import { listTimeslips, getTimeslip, createTimeslip, updateTimeslip } from "./timeslips.js";
 import { listBankAccounts, getBankAccount, listBankTransactions, getBankTransaction } from "./bank-accounts.js";
 import { listBankTransactionExplanations, getBankTransactionExplanation, createBankTransactionExplanation, updateBankTransactionExplanation } from "./bank-transactions.js";
 import { reconcileBankTransaction } from "./reconcile.js";
 import { listJournalSets, getJournalSet, createJournalSet, updateJournalSet, deleteJournalSet } from "./journal-sets.js";
 import { uploadBankStatement, deleteBankTransactionExplanation } from "./statement-upload.js";
-import { listProjects, getProject, createProject } from "./projects.js";
-import { listTasks, getTask, createTask } from "./tasks.js";
+import { listProjects, getProject, createProject, updateProject } from "./projects.js";
+import { listTasks, getTask, createTask, updateTask } from "./tasks.js";
 import { listCategories, getCategory } from "./categories.js";
-import { getCompany, listUsers } from "./company.js";
+import { getCompany, listUsers, getUser, listEmailAddresses } from "./company.js";
 import {
   ListContactsInputSchema, GetContactInputSchema, CreateContactInputSchema,
   ListInvoicesInputSchema, GetInvoiceInputSchema, CreateInvoiceInputSchema, InvoiceFromTimeslipsInputSchema, TransitionInvoiceInputSchema,
@@ -49,6 +63,19 @@ import {
   ListJournalSetsInputSchema, GetJournalSetInputSchema, CreateJournalSetInputSchema,
   UpdateJournalSetInputSchema, DeleteJournalSetInputSchema,
   UploadBankStatementInputSchema, DeleteBankTransactionExplanationInputSchema,
+  ListCreditNotesInputSchema, GetCreditNoteInputSchema,
+  ListCapitalAssetsInputSchema, GetCapitalAssetInputSchema, ListCapitalAssetTypesInputSchema,
+  GetProfitAndLossInputSchema, GetBalanceSheetInputSchema, GetTrialBalanceInputSchema, GetCashflowInputSchema,
+  ListFinalAccountsReportsInputSchema, GetFinalAccountsReportInputSchema,
+  ListCorporationTaxReturnsInputSchema, GetCorporationTaxReturnInputSchema,
+  ListVatReturnsInputSchema, GetVatReturnInputSchema, ListSalesTaxPeriodsInputSchema,
+  ListLedgerTransactionsInputSchema, GetLedgerTransactionInputSchema,
+  ListStockItemsInputSchema, GetStockItemInputSchema,
+  ListEmailAddressesInputSchema, GetUserInputSchema,
+  GetAttachmentInputSchema, DeleteAttachmentInputSchema,
+  ListNotesInputSchema, CreateNoteInputSchema, UpdateNoteInputSchema, DeleteNoteInputSchema,
+  UpdateInvoiceInputSchema, UpdateBillInputSchema, UpdateProjectInputSchema,
+  UpdateTaskInputSchema, UpdatePriceListItemInputSchema,
 } from "../schemas/index.js";
 import { searchTools, callTool } from "./tool-search.js";
 
@@ -128,13 +155,40 @@ export const toolDefinitions: ToolDefinition[] = [
     handler: createInvoice,
   },
   {
+    name: "freeagent_update_invoice",
+    title: "Update FreeAgent Invoice",
+    description:
+      "Update an existing invoice: dates, reference, PO reference, comments, discount, contact, and line items (add without id; modify with id; remove with id + _destroy: 1). Cannot change status — use freeagent_transition_invoice for that. Changes the live account: confirm with the user before calling.",
+    inputSchema: UpdateInvoiceInputSchema.shape,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: updateInvoice,
+  },
+  {
     name: "freeagent_transition_invoice",
     title: "Transition FreeAgent Invoice",
     description:
-      "Move a FreeAgent invoice between lifecycle states: mark as sent, cancelled, draft, scheduled, or convert to a credit note. Use after freeagent_invoice_from_timeslips or freeagent_create_invoice to take a draft through to sent.",
+      "Move a FreeAgent invoice between lifecycle states. 'mark_as_sent' moves Draft → Sent and also re-opens a cancelled invoice; 'mark_as_draft' rolls back to Draft; 'mark_as_scheduled' queues a future send; 'convert_to_credit_note' creates a credit note against the invoice. CAUTION: 'mark_as_cancelled' WRITES OFF a sent invoice as unpaid (it does not merely void it) — the invoice must be sent with a past due date, and the write-off has accounting consequences; reversing it via the API is undocumented (the web UI can remove a write-off). Confirm with the user before cancelling.",
     inputSchema: TransitionInvoiceInputSchema.shape,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     handler: transitionInvoice,
+  },
+
+  // Credit Notes (read-only fork addition)
+  {
+    name: "freeagent_list_credit_notes",
+    title: "List FreeAgent Credit Notes",
+    description: "List credit notes with filtering and pagination. Credit notes cancel or refund invoices; use this to trace cancellation chains instead of inferring them from invoice long_status strings.",
+    inputSchema: ListCreditNotesInputSchema.shape,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: listCreditNotes,
+  },
+  {
+    name: "freeagent_get_credit_note",
+    title: "Get FreeAgent Credit Note",
+    description: "Retrieve a specific credit note with line items, amounts, refund state, and PO reference.",
+    inputSchema: GetCreditNoteInputSchema.shape,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: getCreditNote,
   },
   // Estimate Management
   {
@@ -212,6 +266,220 @@ export const toolDefinitions: ToolDefinition[] = [
     inputSchema: CreatePriceListItemInputSchema.shape,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     handler: createPriceListItem,
+  },
+  {
+    name: "freeagent_update_price_list_item",
+    title: "Update FreeAgent Price List Item",
+    description: "Update an existing catalog item. Only provided fields are changed.",
+    inputSchema: UpdatePriceListItemInputSchema.shape,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: updatePriceListItem,
+  },
+
+  // Accounting reports (read-only fork addition)
+  {
+    name: "freeagent_get_profit_and_loss",
+    title: "Get FreeAgent Profit & Loss Summary",
+    description: "Income, expenses, operating profit, and retained profit for a period. Defaults to the current accounting year to date; date ranges must fit within one accounting year (or pass accounting_period like '2025/26').",
+    inputSchema: GetProfitAndLossInputSchema.shape,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: getProfitAndLoss,
+  },
+  {
+    name: "freeagent_get_balance_sheet",
+    title: "Get FreeAgent Balance Sheet",
+    description: "Balance sheet as at a date (default today): capital assets, current assets, liabilities, and owners' equity. Set opening_balances: true for the company's fixed opening position.",
+    inputSchema: GetBalanceSheetInputSchema.shape,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: getBalanceSheet,
+  },
+  {
+    name: "freeagent_get_trial_balance",
+    title: "Get FreeAgent Trial Balance",
+    description: "Per-category totals with nominal codes for a period — one call replaces adding up individual documents, and it's the natural sanity check after journal or reconciliation work. The markdown output verifies the rows sum to zero.",
+    inputSchema: GetTrialBalanceInputSchema.shape,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: getTrialBalance,
+  },
+  {
+    name: "freeagent_get_cashflow",
+    title: "Get FreeAgent Cashflow",
+    description: "Historic incoming/outgoing cash totals with a monthly breakdown. Future-dated requests return 0 (no projections).",
+    inputSchema: GetCashflowInputSchema.shape,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: getCashflow,
+  },
+
+  // General ledger (read-only fork addition)
+  {
+    name: "freeagent_list_ledger_transactions",
+    title: "List FreeAgent Ledger Transactions",
+    description: "The double-entry postings behind invoices, credit notes, explanations, and journals. Filter by date range (max 12 months, single accounting year) and/or nominal code. Use this to trace what a document actually posted to the accounts.",
+    inputSchema: ListLedgerTransactionsInputSchema.shape,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: listLedgerTransactions,
+  },
+  {
+    name: "freeagent_get_ledger_transaction",
+    title: "Get FreeAgent Ledger Transaction",
+    description: "Retrieve a single general ledger posting including its source document URL.",
+    inputSchema: GetLedgerTransactionInputSchema.shape,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: getLedgerTransaction,
+  },
+
+  // Capital assets (read-only fork addition)
+  {
+    name: "freeagent_list_capital_assets",
+    title: "List FreeAgent Capital Assets",
+    description: "List the capital asset register. Assets are created by explaining a bank transaction, bill, or expense against a capital asset sub-category (e.g. 602-1), optionally with a depreciation_profile; the API exposes the resulting register read-only.",
+    inputSchema: ListCapitalAssetsInputSchema.shape,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: listCapitalAssets,
+  },
+  {
+    name: "freeagent_get_capital_asset",
+    title: "Get FreeAgent Capital Asset",
+    description: "Retrieve a capital asset with its depreciation profile and full lifecycle history (purchase, depreciation postings, capital allowances, disposal).",
+    inputSchema: GetCapitalAssetInputSchema.shape,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: getCapitalAsset,
+  },
+  {
+    name: "freeagent_list_capital_asset_types",
+    title: "List FreeAgent Capital Asset Types",
+    description: "List system and custom capital asset types (Computer Equipment, Motor Vehicles, etc).",
+    inputSchema: ListCapitalAssetTypesInputSchema.shape,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: listCapitalAssetTypes,
+  },
+
+  // Statutory returns (read-only fork addition — deliberately no filing writes)
+  {
+    name: "freeagent_list_final_accounts_reports",
+    title: "List FreeAgent Final Accounts Reports",
+    description: "List Final Accounts reports per accounting period with filing status and due dates. Read-only: filing state changes stay in the web UI.",
+    inputSchema: ListFinalAccountsReportsInputSchema.shape,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: listFinalAccountsReports,
+  },
+  {
+    name: "freeagent_get_final_accounts_report",
+    title: "Get FreeAgent Final Accounts Report",
+    description: "Retrieve a Final Accounts report by its period end date (YYYY-MM-DD).",
+    inputSchema: GetFinalAccountsReportInputSchema.shape,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: getFinalAccountsReport,
+  },
+  {
+    name: "freeagent_list_corporation_tax_returns",
+    title: "List FreeAgent Corporation Tax Returns",
+    description: "List Corporation Tax returns with amount due, payment status, and filing status per period. Read-only. For IoM companies (0% CT), read amount_due here, sanity check it, then zero it with freeagent_create_journal_set.",
+    inputSchema: ListCorporationTaxReturnsInputSchema.shape,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: listCorporationTaxReturns,
+  },
+  {
+    name: "freeagent_get_corporation_tax_return",
+    title: "Get FreeAgent Corporation Tax Return",
+    description: "Retrieve a Corporation Tax return by its period end date (YYYY-MM-DD), including the amount FreeAgent thinks is due.",
+    inputSchema: GetCorporationTaxReturnInputSchema.shape,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: getCorporationTaxReturn,
+  },
+  {
+    name: "freeagent_list_vat_returns",
+    title: "List FreeAgent VAT Returns",
+    description: "List VAT returns with filing status and payments (negative amount_due = refund). Read-only: this tool never files or marks returns.",
+    inputSchema: ListVatReturnsInputSchema.shape,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: listVatReturns,
+  },
+  {
+    name: "freeagent_get_vat_return",
+    title: "Get FreeAgent VAT Return",
+    description: "Retrieve a VAT return by its period end date (YYYY-MM-DD), including the box-by-box breakdown and payments.",
+    inputSchema: GetVatReturnInputSchema.shape,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: getVatReturn,
+  },
+  {
+    name: "freeagent_list_sales_tax_periods",
+    title: "List FreeAgent Sales Tax Periods",
+    description: "List the company's sales tax registration periods (name, rates, registration status, effective dates). Read-only.",
+    inputSchema: ListSalesTaxPeriodsInputSchema.shape,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: listSalesTaxPeriods,
+  },
+
+  // Stock items (read-only in the FreeAgent API)
+  {
+    name: "freeagent_list_stock_items",
+    title: "List FreeAgent Stock Items",
+    description: "List stock items with quantities on hand. Read-only in the FreeAgent API.",
+    inputSchema: ListStockItemsInputSchema.shape,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: listStockItems,
+  },
+  {
+    name: "freeagent_get_stock_item",
+    title: "Get FreeAgent Stock Item",
+    description: "Retrieve a specific stock item by ID.",
+    inputSchema: GetStockItemInputSchema.shape,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: getStockItem,
+  },
+
+  // Attachments
+  {
+    name: "freeagent_get_attachment",
+    title: "Get FreeAgent Attachment",
+    description: "Retrieve an attachment's metadata and time-limited download URLs. Attachment IDs surface on parent resources (explanations, expenses, invoices); there is no list endpoint.",
+    inputSchema: GetAttachmentInputSchema.shape,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: getAttachment,
+  },
+  {
+    name: "freeagent_delete_attachment",
+    title: "Delete FreeAgent Attachment",
+    description: "Permanently delete an attached file. Requires confirm: true. Confirm with the user before calling; the reply records what was removed.",
+    inputSchema: DeleteAttachmentInputSchema.shape,
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+    handler: deleteAttachment,
+  },
+
+  // Notes (on contacts and projects)
+  {
+    name: "freeagent_list_notes",
+    title: "List FreeAgent Notes",
+    description: "List the notes on a contact or project (provide exactly one). Notes are the natural home for audit-trail commentary, e.g. why a write-off was reversed.",
+    inputSchema: ListNotesInputSchema.shape,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: listNotes,
+  },
+  {
+    name: "freeagent_create_note",
+    title: "Create FreeAgent Note",
+    description: "Add a note to a contact or project (provide exactly one).",
+    inputSchema: CreateNoteInputSchema.shape,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    handler: createNote,
+  },
+  {
+    name: "freeagent_update_note",
+    title: "Update FreeAgent Note",
+    description: "Replace the content of an existing note.",
+    inputSchema: UpdateNoteInputSchema.shape,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: updateNote,
+  },
+  {
+    name: "freeagent_delete_note",
+    title: "Delete FreeAgent Note",
+    description: "Permanently delete a note. Requires confirm: true. Confirm with the user before calling; the reply records what was removed.",
+    inputSchema: DeleteNoteInputSchema.shape,
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+    handler: deleteNote,
   },
 
   // Journal Sets (fork addition: manual-jurisdiction adjustments, e.g. IoM CT zeroing)
@@ -341,6 +609,14 @@ export const toolDefinitions: ToolDefinition[] = [
     inputSchema: CreateBillInputSchema.shape,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     handler: createBill,
+  },
+  {
+    name: "freeagent_update_bill",
+    title: "Update FreeAgent Bill",
+    description: "Update an existing supplier bill: dates, reference, comments, contact, and line items (add without id; modify with id; remove with id + _destroy: 1).",
+    inputSchema: UpdateBillInputSchema.shape,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: updateBill,
   },
 
   {
@@ -489,6 +765,14 @@ export const toolDefinitions: ToolDefinition[] = [
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     handler: createProject,
   },
+  {
+    name: "freeagent_update_project",
+    title: "Update FreeAgent Project",
+    description: "Update an existing project: name, status, budget, billing rate, dates, PO reference. Only provided fields are changed.",
+    inputSchema: UpdateProjectInputSchema.shape,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: updateProject,
+  },
 
   // Task Management
   {
@@ -514,6 +798,14 @@ export const toolDefinitions: ToolDefinition[] = [
     inputSchema: CreateTaskInputSchema.shape,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     handler: createTask,
+  },
+  {
+    name: "freeagent_update_task",
+    title: "Update FreeAgent Task",
+    description: "Update an existing task: name, status, billing. Only provided fields are changed.",
+    inputSchema: UpdateTaskInputSchema.shape,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: updateTask,
   },
 
   // Category Management
@@ -550,6 +842,22 @@ export const toolDefinitions: ToolDefinition[] = [
     inputSchema: ListUsersInputSchema.shape,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     handler: listUsers,
+  },
+  {
+    name: "freeagent_get_user",
+    title: "Get FreeAgent User",
+    description: "Retrieve a single user by ID, URL, or 'me' for the authenticated user.",
+    inputSchema: GetUserInputSchema.shape,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: getUser,
+  },
+  {
+    name: "freeagent_list_email_addresses",
+    title: "List FreeAgent Verified Email Addresses",
+    description: "List the account's verified sender email addresses (the addresses FreeAgent may send invoices and estimates from).",
+    inputSchema: ListEmailAddressesInputSchema.shape,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    handler: listEmailAddresses,
   },
 ];
 
