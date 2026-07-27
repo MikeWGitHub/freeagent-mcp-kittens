@@ -6,6 +6,7 @@
  */
 
 import { gunzipSync } from "zlib";
+import { MAX_ATTACHMENT_BYTES } from "../constants.js";
 import type { FreeAgentApiClient } from "../services/api-client.js";
 import type { FreeAgentBankTransactionExplanation } from "../types.js";
 import type {
@@ -256,7 +257,9 @@ export async function createBankTransactionExplanation(
         // Decode Base64 to Buffer
         const compressedBuffer = Buffer.from(attachmentData, 'base64');
         // Decompress using gunzip
-        const decompressedBuffer = gunzipSync(compressedBuffer);
+        // maxOutputLength bounds the decompressed size: without it a small
+        // gzip bomb could exhaust process memory (audit S-MED-1).
+        const decompressedBuffer = gunzipSync(compressedBuffer, { maxOutputLength: MAX_ATTACHMENT_BYTES });
         // Re-encode to Base64
         attachmentData = decompressedBuffer.toString('base64');
       } catch (error) {

@@ -6,6 +6,7 @@
  */
 
 import { gunzipSync } from "zlib";
+import { MAX_ATTACHMENT_BYTES } from "../constants.js";
 import type { FreeAgentApiClient } from "../services/api-client.js";
 import type { FreeAgentExpense } from "../types.js";
 import type {
@@ -258,8 +259,10 @@ export async function createExpense(
       try {
         // Decode Base64 to Buffer
         const compressedBuffer = Buffer.from(attachmentData, 'base64');
-        // Decompress using gunzip
-        const decompressedBuffer = gunzipSync(compressedBuffer);
+        // Decompress using gunzip. maxOutputLength bounds the decompressed
+        // size: without it a small gzip bomb could exhaust process memory
+        // (audit S-MED-1). FreeAgent's own attachment cap is 5MB.
+        const decompressedBuffer = gunzipSync(compressedBuffer, { maxOutputLength: MAX_ATTACHMENT_BYTES });
         // Re-encode to Base64
         attachmentData = decompressedBuffer.toString('base64');
       } catch (error) {
@@ -289,7 +292,7 @@ export async function createExpense(
     `**Expense ID**: ${expenseId}\n` +
     `**Date**: ${expense.dated_on}\n` +
     `**Amount**: ${expense.currency || 'GBP'} ${expense.gross_value}\n` +
-    (isMileage ? `**Miles**: ${expense.miles}\n` : '') +
+    (isMileage ? `**Miles**: ${expense.mileage ?? expense.miles ?? params.miles}\n` : '') +
     `**URL**: ${expense.url}`;
 }
 
@@ -362,6 +365,6 @@ export async function updateExpense(
     `**Date**: ${expense.dated_on}\n` +
     `**Amount**: ${expense.currency || 'GBP'} ${expense.gross_value}\n` +
     (expense.description ? `**Description**: ${expense.description}\n` : '') +
-    (isMileage ? `**Miles**: ${expense.miles}\n` : '') +
+    (isMileage ? `**Miles**: ${expense.mileage ?? expense.miles ?? params.miles}\n` : '') +
     `**URL**: ${expense.url}`;
 }

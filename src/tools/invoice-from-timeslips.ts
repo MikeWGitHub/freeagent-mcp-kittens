@@ -59,9 +59,14 @@ async function findProjectsForContact(
 
   // Paginate: a single-page read silently dropped projects past 100
   // (audit B-HIGH-4).
-  const { items: projects } = await fetchAllPages<FreeAgentProject>(
+  const { items: projects, capped: projectsCapped } = await fetchAllPages<FreeAgentProject>(
     client, "/projects", { contact: contactUrl, view: "active" }, "projects"
   );
+  if (projectsCapped) {
+    throw new Error(
+      "This contact has more than 1000 active projects; refusing to invoice from a truncated project list. Pass `project` explicitly."
+    );
+  }
   if (projects.length === 0) {
     throw new Error(
       `No active projects found for this contact. Create a project first, or pass \`project\` explicitly.`
@@ -78,11 +83,19 @@ async function collectUnbilledTimeslips(
 ): Promise<FreeAgentTimeslip[]> {
   // Paginate: a single-page read silently UNDER-INVOICED when a project had
   // more than 100 unbilled timeslips in range (audit B-HIGH-4).
-  const { items } = await fetchAllPages<FreeAgentTimeslip>(
+  const { items, capped } = await fetchAllPages<FreeAgentTimeslip>(
     client, "/timeslips",
     { project: project.url, view: "unbilled", from_date: fromDate, to_date: toDate },
     "timeslips"
   );
+  if (capped) {
+    // Refuse rather than silently under-invoice (audit residual: surface the
+    // fetchAllPages cap on success paths).
+    throw new Error(
+      `Project ${extractIdFromUrl(project.url)} has over 1000 unbilled timeslips in range; ` +
+      "narrow the date range so the invoice cannot silently omit time."
+    );
+  }
   return items;
 }
 
@@ -244,8 +257,11 @@ export async function invoiceFromTimeslips(
     }
   }
 
+  // Partial link failures must not lead with an unqualified success marker
+  // (audit B-MED-8).
+  const hadFailures = params.link_timeslips && linkSummary.includes("failed");
   return (
-    `✅ Drafted invoice ${invoiceId} for ${items.length} line item(s)\n\n` +
+    `${hadFailures ? "⚠️" : "✅"} Drafted invoice ${invoiceId} for ${items.length} line item(s)${hadFailures ? " — some timeslip links FAILED, see below" : ""}\n\n` +
     `**Contact**: ${invoice.contact}\n` +
     `**Date**: ${invoice.dated_on}\n` +
     `**Total hours**: ${totalHours.toFixed(2)}\n` +

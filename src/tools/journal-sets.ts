@@ -109,6 +109,16 @@ export async function createJournalSet(
   client: FreeAgentApiClient,
   params: CreateJournalSetInput
 ): Promise<string> {
+  // The schema-level balance refine does not survive the .shape registration
+  // path to the MCP boundary, so enforce it here too (audit, v1.1.1 pass).
+  const sum = params.journal_entries.reduce((acc, e) => acc + e.debit_value, 0);
+  if (Math.abs(sum) >= 0.005) {
+    throw new Error(
+      `Journal set does not balance: entries sum to ${sum.toFixed(2)}, expected 0.00 ` +
+      "(debits positive, credits negative)."
+    );
+  }
+
   const entries = [];
   for (const e of params.journal_entries) {
     entries.push(await resolveEntry(client, e));
@@ -134,7 +144,38 @@ export async function updateJournalSet(
   client: FreeAgentApiClient,
   params: UpdateJournalSetInput
 ): Promise<string> {
+  if (params.confirm !== true) {
+    throw new Error(
+      "update_journal_set overwrites existing accounting data. Confirm with the user, then re-call with confirm: true."
+    );
+  }
   const id = idOrUrlToId(params.journal_set_id);
+
+  // Pre-validate the post-update balance client-side (audit B-MED-7): fetch
+  // the current set, simulate the modifications, and refuse an unbalanced
+  // result with a precise message instead of a late FreeAgent 422.
+  if (params.journal_entries) {
+    const current = await client.get<{ journal_set: JournalSet }>(`/journal_sets/${id}`);
+    const byUrl = new Map(
+      (current.data.journal_set.journal_entries ?? []).map((e) => [e.url, Number(e.debit_value) || 0])
+    );
+    for (const e of params.journal_entries) {
+      if (e.url && e._destroy) {
+        byUrl.delete(e.url);
+      } else if (e.url) {
+        if (e.debit_value !== undefined) byUrl.set(e.url, e.debit_value);
+      } else if (e.debit_value !== undefined) {
+        byUrl.set(`new-${byUrl.size}-${e.category ?? ""}`, e.debit_value);
+      }
+    }
+    const sum = [...byUrl.values()].reduce((a, b) => a + b, 0);
+    if (Math.abs(sum) >= 0.005) {
+      throw new Error(
+        `The updated journal set would not balance: entries would sum to ${sum.toFixed(2)}, expected 0.00. ` +
+        "Adjust the entries so debits (positive) and credits (negative) cancel out."
+      );
+    }
+  }
 
   const payload: Record<string, unknown> = {};
   if (params.dated_on) payload.dated_on = params.dated_on;

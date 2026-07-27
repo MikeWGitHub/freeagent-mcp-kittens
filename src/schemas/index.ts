@@ -1151,6 +1151,8 @@ export const UpdateJournalEntrySchema = z.object({
 
 export const UpdateJournalSetInputSchema = z.object({
   journal_set_id: z.string().min(1).describe("Journal set numeric ID or full URL."),
+  confirm: z.literal(true)
+    .describe("Must be exactly true. Acknowledges this overwrites existing accounting data."),
   dated_on: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   description: z.string().optional(),
   journal_entries: z.array(UpdateJournalEntrySchema).optional()
@@ -1179,6 +1181,8 @@ export const StatementTransactionSchema = z.object({
 export const UploadBankStatementInputSchema = z.object({
   bank_account: z.string().min(1)
     .describe("Bank account numeric ID or full URL to upload into."),
+  confirm: z.literal(true)
+    .describe("Must be exactly true. Acknowledges this adds real transactions to the live bank account."),
   transactions: z.array(StatementTransactionSchema).min(1)
     .describe("Transactions to add. WARNING: FreeAgent de-duplicates against existing transactions with the same date+amount+description, silently dropping matches. To deliberately add a same-day twin, vary the description or supply a unique fitid. The tool verifies what actually imported and reports any dropped rows.")
 }).strict();

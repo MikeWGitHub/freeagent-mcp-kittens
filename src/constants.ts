@@ -10,7 +10,11 @@ export const API_VERSION = "v2";
 // Single source of truth for the server's version identity (package.json,
 // MCP server info, and the API User-Agent previously disagreed — audit
 // D-HIGH-1, Jul 2026). Keep in sync with package.json on release.
-export const SERVER_VERSION = "1.1.1";
+export const SERVER_VERSION = "1.1.2";
+
+// Upper bound on a decoded/decompressed attachment. FreeAgent's own limit is
+// 5MB; 8MB leaves headroom while stopping gzip bombs (audit S-MED-1).
+export const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024;
 
 // The only hosts this server will ever send a FreeAgent bearer token to.
 // Absolute resource URLs from tool arguments are validated against this list

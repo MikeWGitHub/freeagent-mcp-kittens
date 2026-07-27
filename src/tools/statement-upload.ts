@@ -72,6 +72,7 @@ export async function uploadBankStatement(
     client, "/bank_transactions", range, "bank_transactions"
   );
   const preExisting = new Set(before.items.map((t) => t.url));
+  let verificationCapped = before.capped;
 
   await client.post(`/bank_transactions/statement?bank_account=${account}`, {
     statement,
@@ -83,6 +84,7 @@ export async function uploadBankStatement(
     const check = await fetchAllPages<UploadedTransaction>(
       client, "/bank_transactions", range, "bank_transactions"
     );
+    verificationCapped = verificationCapped || check.capped;
     imported = check.items.filter((t) => !preExisting.has(t.url));
     // Stop early once every sent row is accounted for; a shortfall may just
     // mean the import is still processing, so keep polling until the delays
@@ -90,8 +92,11 @@ export async function uploadBankStatement(
     if (imported.length >= params.transactions.length) break;
   }
 
+  // A partial result must not lead with an unqualified success marker
+  // (audit B-MED-8): agents skim the first line.
+  const shortfall = imported.length < params.transactions.length;
   const lines = [
-    `✅ Statement uploaded to bank account ${account}.`,
+    `${shortfall ? "⚠️" : "✅"} Statement uploaded to bank account ${account}${shortfall ? " — NOT all rows verified, see below" : ""}.`,
     "",
     `**Sent**: ${params.transactions.length} transaction(s)`,
     `**Imported in this upload**: ${imported.length}`,
@@ -108,6 +113,12 @@ export async function uploadBankStatement(
     lines.push(
       "",
       `⚠️ ${params.transactions.length - imported.length} row(s) did not appear within the verification window. The most likely cause is FreeAgent's silent de-duplication (same date + amount + description as an existing transaction) — to add a deliberate same-day twin, re-send with a different description. A slow import is also possible: re-check with freeagent_list_bank_transactions for the affected dates before re-sending.`
+    );
+  }
+  if (verificationCapped) {
+    lines.push(
+      "",
+      `⚠️ Verification paged through the maximum window (1000 transactions in range); counts above may be incomplete. Narrow the date range to fully verify.`
     );
   }
   if (imported.length > params.transactions.length) {
