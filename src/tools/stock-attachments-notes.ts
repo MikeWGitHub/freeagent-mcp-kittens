@@ -178,22 +178,18 @@ export async function deleteAttachment(
 // Notes
 // ---------------------------------------------------------------------------
 
-function parentQuery(contact?: string, project?: string): Record<string, string> {
+function parentQuery(
+  client: FreeAgentApiClient,
+  contact?: string,
+  project?: string
+): Record<string, string> {
   if (Boolean(contact) === Boolean(project)) {
     throw new Error("Provide exactly one of `contact` or `project` — notes belong to one parent.");
   }
   if (contact) {
-    return {
-      contact: contact.startsWith("http")
-        ? contact
-        : `https://api.freeagent.com/v2/contacts/${contact}`,
-    };
+    return { contact: client.resourceUrl("contacts", contact) };
   }
-  return {
-    project: project!.startsWith("http")
-      ? project!
-      : `https://api.freeagent.com/v2/projects/${project}`,
-  };
+  return { project: client.resourceUrl("projects", project!) };
 }
 
 export async function listNotes(
@@ -202,7 +198,7 @@ export async function listNotes(
 ): Promise<string> {
   const response = await client.get<{ notes: FreeAgentNote[] }>(
     "/notes",
-    parentQuery(params.contact, params.project)
+    parentQuery(client, params.contact, params.project)
   );
   const notes = response.data.notes ?? [];
 
@@ -226,7 +222,7 @@ export async function createNote(
   client: FreeAgentApiClient,
   params: CreateNoteInput
 ): Promise<string> {
-  const query = parentQuery(params.contact, params.project);
+  const query = parentQuery(client, params.contact, params.project);
   const queryString = new URLSearchParams(query).toString();
 
   const response = await client.post<{ note: FreeAgentNote }>(`/notes?${queryString}`, {

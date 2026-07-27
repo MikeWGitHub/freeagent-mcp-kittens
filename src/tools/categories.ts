@@ -1,6 +1,18 @@
 import { FreeAgentApiClient } from "../services/api-client.js";
 import { ResponseFormat } from "../constants.js";
 import type { FreeAgentCategory } from "../types.js";
+import { unwrapSingleCategory } from "../services/resolvers.js";
+
+/**
+ * auto_sales_tax_rate is a number for some accounts but a descriptive string
+ * ("Standard rate") for others; multiplying the string produced "NaN%"
+ * (audit B-MED-2). Render numbers as percentages and strings verbatim.
+ */
+function formatAutoSalesTaxRate(rate: number | string): string {
+  const n = typeof rate === "number" ? rate : Number(rate);
+  if (Number.isFinite(n)) return `${(n * 100).toFixed(1)}%`;
+  return String(rate);
+}
 import type { ListCategoriesInput, GetCategoryInput } from "../schemas/index.js";
 
 /**
@@ -76,7 +88,7 @@ export async function listCategories(
       }
 
       if (category.auto_sales_tax_rate !== undefined) {
-        parts.push(`  Auto Sales Tax Rate: ${(category.auto_sales_tax_rate * 100).toFixed(1)}%`);
+        parts.push(`  Auto Sales Tax Rate: ${formatAutoSalesTaxRate(category.auto_sales_tax_rate)}`);
       }
 
       return parts.join("\n");
@@ -94,8 +106,20 @@ export async function getCategory(
   params: GetCategoryInput
 ): Promise<string> {
   const nominalCode = params.nominal_code.replace(/^.*\/categories\//, "");
-  const response = await apiClient.get<{ category: FreeAgentCategory }>(`/categories/${nominalCode}`);
-  const category = response.data.category;
+  // The single-category endpoint wraps its result under a type-dependent key
+  // (income_categories, admin_expenses_categories, ...), never "category".
+  // Reading response.data.category made this tool systematically return
+  // undefined fields (audit B-CRIT-1); share the resolver's unwrap instead.
+  const response = await apiClient.get<Record<string, FreeAgentCategory | FreeAgentCategory[] | undefined>>(
+    `/categories/${nominalCode}`
+  );
+  const category = unwrapSingleCategory(response.data);
+  if (!category) {
+    throw new Error(
+      `Category ${nominalCode} was returned in an unrecognised shape or does not exist. ` +
+      `Call freeagent_list_categories to see available nominal codes.`
+    );
+  }
 
   if (params.response_format === ResponseFormat.JSON) {
     return JSON.stringify(category, null, 2);
@@ -121,7 +145,7 @@ export async function getCategory(
   }
 
   if (category.auto_sales_tax_rate !== undefined) {
-    details.push(`  Auto Sales Tax Rate: ${(category.auto_sales_tax_rate * 100).toFixed(1)}%`);
+    details.push(`  Auto Sales Tax Rate: ${formatAutoSalesTaxRate(category.auto_sales_tax_rate)}`);
   }
 
   if (category.bank_account) {
@@ -136,8 +160,8 @@ export async function getCategory(
     details.push(`  User: ${category.user}`);
   }
 
-  details.push(`  Created: ${category.created_at}`);
-  details.push(`  Updated: ${category.updated_at}`);
+  if (category.created_at) details.push(`  Created: ${category.created_at}`);
+  if (category.updated_at) details.push(`  Updated: ${category.updated_at}`);
 
   return details.join("\n");
 }

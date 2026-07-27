@@ -23,6 +23,11 @@ function makeClient(handlers: {
       calls.push({ method: "post", path, body });
       return { data: handlers.post?.(path, body), headers: {} };
     }),
+    parsePaginationHeaders: () => ({ hasMore: false }),
+    resourceUrl: (resource: string, idOrUrl: string) =>
+      idOrUrl.startsWith("http")
+        ? idOrUrl
+        : `https://api.freeagent.com/v2/${resource}/${idOrUrl}`,
   } as unknown as FreeAgentApiClient;
   return { client, calls };
 }

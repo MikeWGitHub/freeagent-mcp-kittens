@@ -6,6 +6,7 @@
  * expenses, projects, bank accounts, and company information.
  */
 
+import { SERVER_VERSION } from "./constants.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { FreeAgentApiClient } from "./services/api-client.js";
@@ -61,7 +62,7 @@ async function main() {
   // Initialize MCP server and register tools
   const server = new McpServer({
     name: "freeagent-mcp-server",
-    version: "1.0.0"
+    version: SERVER_VERSION
   });
 
   const apiClient = new FreeAgentApiClient(ACCESS_TOKEN ?? "", USE_SANDBOX, REFRESH_CONFIG);

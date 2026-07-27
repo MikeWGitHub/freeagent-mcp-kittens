@@ -17,11 +17,11 @@
 import type { FreeAgentApiClient } from "../services/api-client.js";
 import type { FreeAgentExpense } from "../types.js";
 import type { LogExpenseInput } from "../schemas/index.js";
-import { extractIdFromUrl } from "../services/formatter.js";
+import { extractIdFromUrl, todayLocalISO } from "../services/formatter.js";
 import { resolveCategory, resolveUser } from "../services/resolvers.js";
 
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  return todayLocalISO();
 }
 
 function toGrossValue(amount: string, kind: "expense" | "refund"): string {

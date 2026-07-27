@@ -12,6 +12,7 @@
  */
 
 import type { FreeAgentApiClient } from "../services/api-client.js";
+import { fetchAllPages } from "../services/api-client.js";
 import type {
   UploadBankStatementInput,
   DeleteBankTransactionExplanationInput,
@@ -62,13 +63,15 @@ export async function uploadBankStatement(
   // snapshot the affected date range before uploading, then poll the same
   // range afterwards and diff by transaction ID. New IDs = this upload.
   const dates = params.transactions.map((t) => t.dated_on).sort();
-  const range = { bank_account: account, from_date: dates[0], to_date: dates[dates.length - 1], per_page: 100 };
+  const range = { bank_account: account, from_date: dates[0], to_date: dates[dates.length - 1] };
 
-  const before = await client.get<{ bank_transactions: UploadedTransaction[] }>(
-    "/bank_transactions",
-    range
+  // Paginate the snapshot and every poll: a single-page (100-row) read made
+  // the verification lie for busy date ranges — wrong import counts and false
+  // dedupe warnings (audit B-HIGH-2).
+  const before = await fetchAllPages<UploadedTransaction>(
+    client, "/bank_transactions", range, "bank_transactions"
   );
-  const preExisting = new Set((before.data.bank_transactions ?? []).map((t) => t.url));
+  const preExisting = new Set(before.items.map((t) => t.url));
 
   await client.post(`/bank_transactions/statement?bank_account=${account}`, {
     statement,
@@ -77,11 +80,10 @@ export async function uploadBankStatement(
   let imported: UploadedTransaction[] = [];
   for (const delayMs of VERIFY_DELAYS_MS) {
     await sleep(delayMs);
-    const check = await client.get<{ bank_transactions: UploadedTransaction[] }>(
-      "/bank_transactions",
-      range
+    const check = await fetchAllPages<UploadedTransaction>(
+      client, "/bank_transactions", range, "bank_transactions"
     );
-    imported = (check.data.bank_transactions ?? []).filter((t) => !preExisting.has(t.url));
+    imported = check.items.filter((t) => !preExisting.has(t.url));
     // Stop early once every sent row is accounted for; a shortfall may just
     // mean the import is still processing, so keep polling until the delays
     // are exhausted before concluding rows were de-duplicated away.

@@ -150,6 +150,9 @@ function renderToolBlock(tool: ToolDefinition): string {
   const payload = {
     description: tool.description,
     name: tool.name,
+    // Without annotations, agents in tool-search mode lost the read-only /
+    // destructive hints the direct catalog carries (audit D-HIGH-5).
+    annotations: tool.annotations,
     parameters,
   };
   return `<function>${JSON.stringify(payload)}</function>`;

@@ -31,7 +31,12 @@ function clientWithListings(listings: ReturnType<typeof txn>[][]): {
     headers: {},
   });
   const post = vi.fn().mockResolvedValue({ data: {}, headers: {} });
-  return { client: { get, post } as unknown as FreeAgentApiClient, get, post };
+  const client = {
+    get,
+    post,
+    parsePaginationHeaders: () => ({ hasMore: false }),
+  } as unknown as FreeAgentApiClient;
+  return { client, get, post };
 }
 
 const twoRows: UploadBankStatementInput = {

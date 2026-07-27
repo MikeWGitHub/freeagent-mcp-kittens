@@ -137,7 +137,13 @@ export interface FreeAgentBankTransaction {
   url: string;
   bank_account: string;
   dated_on: string;
-  gross_value: string;
+  /**
+   * NOT returned by the bank transaction API — kept optional only because
+   * some historical payloads carried it. The real fields are `amount` and
+   * `unexplained_amount`; treating gross_value as required enabled the
+   * Jul 2026 reconcile bug (0.00 explanations). Audit B-MED-4.
+   */
+  gross_value?: string;
   amount?: string;
   description?: string;
   unexplained_amount?: string;
@@ -183,7 +189,7 @@ export interface FreeAgentCategory {
   group_description?: string;
   allowable_for_tax?: boolean;
   tax_reporting_name?: string;
-  auto_sales_tax_rate?: number;
+  auto_sales_tax_rate?: number | string;
   bank_account?: string;
   capital_asset_type?: string;
   user?: string;

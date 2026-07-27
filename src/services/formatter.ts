@@ -140,3 +140,15 @@ export function createPaginationMetadata(params: {
   
   return parts.join(" | ");
 }
+
+/**
+ * Today's date in the SERVER'S LOCAL timezone as YYYY-MM-DD. Defaulting book
+ * dates via toISOString() used UTC, which shifts the date across midnight for
+ * non-UTC books (audit B-MED-3). FreeAgent dates are calendar dates.
+ */
+export function todayLocalISO(now: Date = new Date()): string {
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}

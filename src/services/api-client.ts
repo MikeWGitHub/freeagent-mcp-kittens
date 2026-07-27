@@ -3,7 +3,7 @@
  */
 
 import axios, { AxiosError, AxiosInstance, AxiosRequestConfig } from "axios";
-import { API_BASE_URL, SANDBOX_API_BASE_URL, API_VERSION } from "../constants.js";
+import { API_BASE_URL, SANDBOX_API_BASE_URL, API_VERSION, SERVER_VERSION, ALLOWED_FA_HOSTS } from "../constants.js";
 import type { FreeAgentApiError, FreeAgentApiErrorItem } from "../types.js";
 
 export interface ApiResponse<T> {
@@ -77,7 +77,7 @@ export class FreeAgentApiClient {
     this.axiosInstance = axios.create({
       baseURL: `${baseURL}/${API_VERSION}`,
       headers: {
-        "User-Agent": "FreeAgent-MCP-Server/1.0.0",
+        "User-Agent": `FreeAgent-MCP-Server/${SERVER_VERSION}`,
         "Accept": "application/json",
         "Content-Type": "application/json"
       },
@@ -87,6 +87,15 @@ export class FreeAgentApiClient {
     // Attach the current token per request rather than freezing it at construction,
     // so a refreshed token is picked up by subsequent calls.
     this.axiosInstance.interceptors.request.use(async (config) => {
+      // SSRF guard (audit S-HIGH-1): tools accept "ID or full URL" arguments
+      // and many pass absolute URLs straight through. Axios ignores baseURL
+      // for absolute URLs, and this interceptor attaches the FreeAgent bearer
+      // token — so an injected URL would ship credentials to an arbitrary
+      // host. Normalize every absolute URL to a relative /v2 path against an
+      // allowlisted FreeAgent host before the request leaves the process.
+      if (config.url && /^https?:\/\//i.test(config.url)) {
+        config.url = this.toRelativePath(config.url);
+      }
       if (!this.accessToken && this.refreshConfig) {
         await this.refreshAccessToken();
       }
@@ -120,7 +129,13 @@ export class FreeAgentApiClient {
           const attempts = original._rateLimitRetries ?? 0;
           if (attempts < RATE_LIMIT_MAX_RETRIES) {
             original._rateLimitRetries = attempts + 1;
-            const waitMs = parseRetryAfterMs(error.response.headers?.["retry-after"]);
+            // Full jitter (audit R-HIGH-1) so parallel tool calls don't
+            // stampede FreeAgent in lockstep after a shared 429. On Vercel
+            // the function budget is 60s, so cap the sleep well below it
+            // (audit R-CRIT-4) — better a clean rate-limit error than a 504.
+            let waitMs = parseRetryAfterMs(error.response.headers?.["retry-after"]);
+            waitMs += Math.floor(Math.random() * 1000);
+            if (process.env.VERCEL) waitMs = Math.min(waitMs, 20_000);
             logWarn("FreeAgent rate limit hit (429); backing off before retrying", {
               url: original.url,
               attempt: original._rateLimitRetries,
@@ -146,6 +161,52 @@ export class FreeAgentApiClient {
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
+
+  /**
+   * Convert an absolute FreeAgent URL to a relative /v2 path, rejecting any
+   * host outside the allowlist. A cross-environment URL (production URL while
+   * running against sandbox, or vice versa) is accepted but logged: IDs are
+   * environment-local, so the caller almost certainly meant the active one.
+   */
+  private toRelativePath(absoluteUrl: string): string {
+    let parsed: URL;
+    try {
+      parsed = new URL(absoluteUrl);
+    } catch {
+      throw new Error(`Invalid resource URL: ${absoluteUrl}`);
+    }
+    if (!ALLOWED_FA_HOSTS.has(parsed.hostname)) {
+      throw new Error(
+        `Refusing to call non-FreeAgent host "${parsed.hostname}". ` +
+        `Resource URLs must point at api.freeagent.com or api.sandbox.freeagent.com.`
+      );
+    }
+    const activeHost = new URL(this.useSandbox ? SANDBOX_API_BASE_URL : API_BASE_URL).hostname;
+    if (parsed.hostname !== activeHost) {
+      logWarn("Cross-environment FreeAgent URL normalised to the active environment", {
+        given: parsed.hostname,
+        active: activeHost,
+      });
+    }
+    const path = parsed.pathname.replace(new RegExp(`^/${API_VERSION}`), "");
+    return `${path}${parsed.search}`;
+  }
+
+  /**
+   * Build a full resource URL in the ACTIVE environment from an ID or URL.
+   * Use this instead of hardcoding https://api.freeagent.com/... in payload
+   * and query builders — hardcoded production hosts silently point sandbox
+   * sessions at production resources (audit B-HIGH-1).
+   */
+  resourceUrl(resource: string, idOrUrl: string): string {
+    const base = this.useSandbox ? SANDBOX_API_BASE_URL : API_BASE_URL;
+    if (/^https?:\/\//i.test(idOrUrl)) {
+      // Validate + re-home to the active environment.
+      return `${base}/${API_VERSION}${this.toRelativePath(idOrUrl).split("?")[0]}`;
+    }
+    return `${base}/${API_VERSION}/${resource}/${idOrUrl}`;
+  }
+
 
   /**
    * Exchange the refresh token for a new access token.
@@ -411,4 +472,39 @@ export class FreeAgentApiClient {
  */
 export function formatErrorForLLM(error: Error): string {
   return `Error: ${error.message}`;
+}
+
+/**
+ * Fetch every page of a list endpoint (up to maxPages), concatenating the
+ * items under `key`. Single-page reads silently truncate at 100 rows — which
+ * live use showed corrupts reconciliation verdicts and resolver matches
+ * (audit B-HIGH-2/3/4). Standalone function (not a client method) so tests
+ * can keep mocking just get() + parsePaginationHeaders().
+ */
+export async function fetchAllPages<T>(
+  client: Pick<FreeAgentApiClient, "get" | "parsePaginationHeaders">,
+  endpoint: string,
+  params: Record<string, string | number | boolean | undefined>,
+  key: string,
+  maxPages: number = 10
+): Promise<{ items: T[]; pagesFetched: number; capped: boolean }> {
+  const items: T[] = [];
+  let page = 1;
+  let capped = false;
+  for (;;) {
+    const response = await client.get<Record<string, T[]>>(endpoint, {
+      ...params,
+      page,
+      per_page: 100,
+    });
+    items.push(...(response.data[key] ?? []));
+    const pagination = client.parsePaginationHeaders(response.headers);
+    if (!pagination.hasMore) break;
+    if (page >= maxPages) {
+      capped = true;
+      break;
+    }
+    page = pagination.nextPage ?? page + 1;
+  }
+  return { items, pagesFetched: page, capped };
 }

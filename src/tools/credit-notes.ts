@@ -30,14 +30,10 @@ export async function listCreditNotes(
   };
   if (params.view) queryParams.view = params.view;
   if (params.contact) {
-    queryParams.contact = params.contact.startsWith("http")
-      ? params.contact
-      : `https://api.freeagent.com/v2/contacts/${params.contact}`;
+    queryParams.contact = client.resourceUrl("contacts", params.contact);
   }
   if (params.project) {
-    queryParams.project = params.project.startsWith("http")
-      ? params.project
-      : `https://api.freeagent.com/v2/projects/${params.project}`;
+    queryParams.project = client.resourceUrl("projects", params.project);
   }
   if (params.sort) queryParams.sort = params.sort;
   if (params.nested_credit_note_items) queryParams.nested_credit_note_items = "true";

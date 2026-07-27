@@ -183,7 +183,10 @@ describe("429 retry with backoff", () => {
 
     const result = await errorHandler(make429(config, "2"));
 
-    expect(sleepSpy).toHaveBeenCalledWith(2000);
+    // Base wait 2000ms plus up to 1000ms of anti-stampede jitter.
+    const waited = sleepSpy.mock.calls[0][0] as number;
+    expect(waited).toBeGreaterThanOrEqual(2000);
+    expect(waited).toBeLessThan(3000);
     expect(mockAxios.request).toHaveBeenCalledWith(config);
     expect(config._rateLimitRetries).toBe(1);
     expect(result).toEqual({ data: { journal_set: {} }, headers: {} });
@@ -195,7 +198,10 @@ describe("429 retry with backoff", () => {
 
     await errorHandler(make429(config));
 
-    expect(sleepSpy).toHaveBeenCalledWith(RATE_LIMIT_DEFAULT_WAIT_MS);
+    // Default wait plus up to 1000ms of anti-stampede jitter.
+    const waited = sleepSpy.mock.calls[0][0] as number;
+    expect(waited).toBeGreaterThanOrEqual(RATE_LIMIT_DEFAULT_WAIT_MS);
+    expect(waited).toBeLessThan(RATE_LIMIT_DEFAULT_WAIT_MS + 1000);
   });
 
   it("gives up after the retry cap and rejects with the original error", async () => {

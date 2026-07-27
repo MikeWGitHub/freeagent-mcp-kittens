@@ -24,6 +24,16 @@ import { getBaseUrl } from "../constants.js";
 // Configuration
 const FREEAGENT_CLIENT_ID = process.env.FREEAGENT_CLIENT_ID!;
 const FREEAGENT_CLIENT_SECRET = process.env.FREEAGENT_CLIENT_SECRET!;
+// A missing JWT_SECRET on serverless is not a degraded mode, it is broken:
+// every cold start mints a new random secret, invalidating all outstanding
+// tokens and breaking multi-instance verification (audit S-HIGH-2/R-CRIT-1).
+// Fail closed on Vercel; warn loudly elsewhere (stdio never uses this path).
+if (process.env.VERCEL && !process.env.JWT_SECRET) {
+  throw new Error(
+    "JWT_SECRET must be set for serverless deployments. Generate one with " +
+    "`openssl rand -hex 32` and add it to the environment."
+  );
+}
 const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
 const USE_SANDBOX = process.env.FREEAGENT_USE_SANDBOX === "true";
 
@@ -117,8 +127,10 @@ export class FreeAgentJWTOAuthProvider implements OAuthServerProvider {
   constructor() {
     this.clientsStore = new JWTClientsStore();
 
-    if (!JWT_SECRET) {
-      console.warn("WARNING: JWT_SECRET not set. Using random secret (tokens won't persist across restarts)");
+    // The old `if (!JWT_SECRET)` check was dead code — the fallback above
+    // makes it always truthy (audit S-HIGH-2). Check the env var itself.
+    if (!process.env.JWT_SECRET) {
+      console.warn("WARNING: JWT_SECRET not set. Using a random per-process secret: tokens will not survive restarts and will fail across instances.");
     }
   }
 

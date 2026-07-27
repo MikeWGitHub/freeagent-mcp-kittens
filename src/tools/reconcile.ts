@@ -8,6 +8,7 @@
  */
 
 import type { FreeAgentApiClient } from "../services/api-client.js";
+import { fetchAllPages } from "../services/api-client.js";
 import type {
   FreeAgentBankTransaction,
   FreeAgentBankTransactionExplanation,
@@ -31,14 +32,11 @@ async function resolveInvoice(
   }
 
   // Treat as invoice reference. FreeAgent's list endpoint does not filter by
-  // reference, so we page through at most 100 invoices and match client-side.
-  const response = await client.get<{ invoices: FreeAgentInvoice[] }>(
-    "/invoices",
-    { per_page: 100, view: "recent_open_or_overdue" }
-  );
-  const matches = (response.data.invoices ?? []).filter(
-    (inv) => inv.reference === hint
-  );
+  // reference, so page through open/overdue invoices and match client-side.
+  // A single-page read missed references beyond row 100 and reported "no
+  // open invoice" for invoices that exist (audit B-HIGH-3).
+  const { items: invoices, pagesFetched, capped } = await fetchAllPages<FreeAgentInvoice>(client, "/invoices", { view: "recent_open_or_overdue" }, "invoices");
+  const matches = invoices.filter((inv) => inv.reference === hint);
 
   if (matches.length === 1) return matches[0].url;
   if (matches.length > 1) {
@@ -48,7 +46,8 @@ async function resolveInvoice(
   }
 
   throw new Error(
-    `No open invoice has reference "${hint}". Check the reference, or pass the invoice ID/URL directly.`
+    `No open invoice has reference "${hint}" (searched ${invoices.length} invoices across ${pagesFetched} page(s)${capped ? ", capped" : ""}). ` +
+    `Check the reference, or pass the invoice ID/URL directly.`
   );
 }
 

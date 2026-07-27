@@ -39,16 +39,12 @@ export async function listInvoices(
 
   if (params.contact) {
     // Normalize contact parameter
-    queryParams.contact = params.contact.startsWith("http")
-      ? params.contact
-      : `https://api.freeagent.com/v2/contacts/${params.contact}`;
+    queryParams.contact = client.resourceUrl("contacts", params.contact);
   }
 
   if (params.project) {
     // Normalize project parameter
-    queryParams.project = params.project.startsWith("http")
-      ? params.project
-      : `https://api.freeagent.com/v2/projects/${params.project}`;
+    queryParams.project = client.resourceUrl("projects", params.project);
   }
 
   if (params.sort) {
@@ -338,10 +334,9 @@ export async function createInvoice(
   const rawContact =
     params.contact ?? (await elicitContact(client, ctx));
 
-  // Normalize contact URL
-  const contact = rawContact.startsWith("http")
-    ? rawContact
-    : `https://api.freeagent.com/v2/contacts/${rawContact}`;
+  // Normalize to a full URL in the ACTIVE environment (hardcoding the
+  // production host broke sandbox sessions — audit B-HIGH-1).
+  const contact = client.resourceUrl("contacts", rawContact);
 
   const invoiceData: Record<string, unknown> = {
     contact,
@@ -406,9 +401,7 @@ export async function updateInvoice(
   const invoiceData: Record<string, unknown> = {};
 
   if (fields.contact !== undefined) {
-    invoiceData.contact = fields.contact.startsWith("http")
-      ? fields.contact
-      : `https://api.freeagent.com/v2/contacts/${fields.contact}`;
+    invoiceData.contact = client.resourceUrl("contacts", fields.contact);
   }
   for (const key of [
     "dated_on", "due_on", "payment_terms_in_days", "reference", "po_reference",

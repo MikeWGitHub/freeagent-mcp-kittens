@@ -16,7 +16,7 @@ import { mcpAuthRouter } from "@modelcontextprotocol/sdk/server/auth/router.js";
 import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js";
 import { createFreeAgentJWTOAuthProvider, getFreeAgentTokenFromJWT } from "../src/services/oauth-jwt.js";
 import { FreeAgentApiClient } from "../src/services/api-client.js";
-import { getBaseUrl } from "../src/constants.js";
+import { getBaseUrl, SERVER_VERSION } from "../src/constants.js";
 import { registerAllTools } from "../src/tools/register.js";
 
 // Configuration
@@ -107,7 +107,7 @@ app.get("/oauth/callback", async (req: any, res: any) => {
 function createMcpServer(freeagentToken: string): McpServer {
   const server = new McpServer({
     name: "freeagent-mcp-server",
-    version: "1.0.0"
+    version: SERVER_VERSION
   });
 
   const apiClient = new FreeAgentApiClient(freeagentToken, USE_SANDBOX);
@@ -163,7 +163,7 @@ app.get("/health", (req: any, res: any) => {
   res.json({
     status: "ok",
     service: "freeagent-mcp-server",
-    version: "1.0.0",
+    version: SERVER_VERSION,
     oauth_mode: "jwt-stateless",
     freeagent_environment: USE_SANDBOX ? "sandbox" : "production",
   });

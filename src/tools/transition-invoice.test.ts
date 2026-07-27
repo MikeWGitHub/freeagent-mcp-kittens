@@ -64,8 +64,36 @@ describe("transitionInvoice", () => {
     await transitionInvoice(client, {
       invoice_id: "https://api.freeagent.com/v2/invoices/999",
       action: "mark_as_cancelled",
+      confirm: true,
     });
 
     expect(calls[0].path).toBe("/invoices/999/transitions/mark_as_cancelled");
+  });
+
+  it("refuses mark_as_cancelled without confirm: true (it writes the invoice off)", async () => {
+    const { client, calls } = makeClient({});
+
+    await expect(
+      transitionInvoice(client, { invoice_id: "999", action: "mark_as_cancelled" })
+    ).rejects.toThrow(/writes the invoice off as unpaid/);
+    expect(calls.length).toBe(0);
+  });
+
+  it("does not require confirm for non-destructive transitions", async () => {
+    const { client, calls } = makeClient({
+      invoice: {
+        url: "https://api.freeagent.com/v2/invoices/7",
+        status: "Sent",
+        dated_on: "2026-04-23",
+        currency: "GBP",
+        total_value: "1.00",
+        net_value: "1.00",
+        sales_tax_value: "0.00",
+        contact: "c/1",
+      },
+    });
+
+    await transitionInvoice(client, { invoice_id: "7", action: "mark_as_sent" });
+    expect(calls[0].path).toBe("/invoices/7/transitions/mark_as_sent");
   });
 });

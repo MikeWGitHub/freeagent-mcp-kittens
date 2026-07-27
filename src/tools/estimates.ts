@@ -134,9 +134,9 @@ export async function createEstimate(
   client: FreeAgentApiClient,
   params: CreateEstimateInput
 ): Promise<string> {
-  const contactUrl = params.contact.startsWith("http")
-    ? params.contact
-    : `https://api.freeagent.com/v2/contacts/${params.contact}`;
+  // Active-environment URL: hardcoding the production host broke sandbox
+  // sessions (audit B-HIGH-1).
+  const contactUrl = client.resourceUrl("contacts", params.contact);
 
   const payload: Record<string, unknown> = {
     contact: contactUrl,

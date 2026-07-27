@@ -167,9 +167,7 @@ export async function updateBill(
 
   const billData: Record<string, unknown> = {};
   if (params.contact !== undefined) {
-    billData.contact = params.contact.startsWith("http")
-      ? params.contact
-      : `https://api.freeagent.com/v2/contacts/${params.contact}`;
+    billData.contact = client.resourceUrl("contacts", params.contact);
   }
   for (const key of ["reference", "dated_on", "due_on", "comments", "bill_items"] as const) {
     if (params[key] !== undefined) billData[key] = params[key];

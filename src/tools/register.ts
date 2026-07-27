@@ -167,7 +167,7 @@ export const toolDefinitions: ToolDefinition[] = [
     name: "freeagent_transition_invoice",
     title: "Transition FreeAgent Invoice",
     description:
-      "Move a FreeAgent invoice between lifecycle states. 'mark_as_sent' moves Draft → Sent and also re-opens a cancelled invoice; 'mark_as_draft' rolls back to Draft; 'mark_as_scheduled' queues a future send; 'convert_to_credit_note' creates a credit note against the invoice. CAUTION: 'mark_as_cancelled' WRITES OFF a sent invoice as unpaid (it does not merely void it) — the invoice must be sent with a past due date, and the write-off has accounting consequences; reversing it via the API is undocumented (the web UI can remove a write-off). Confirm with the user before cancelling.",
+      "Move a FreeAgent invoice between lifecycle states. 'mark_as_sent' moves Draft → Sent and also re-opens a cancelled invoice; 'mark_as_draft' rolls back to Draft; 'mark_as_scheduled' queues a future send; 'convert_to_credit_note' creates a credit note against the invoice. CAUTION: 'mark_as_cancelled' WRITES OFF a sent invoice as unpaid (it does not merely void it) — the invoice must be sent with a past due date, and the write-off has accounting consequences; reversing it via the API is undocumented (the web UI can remove a write-off). mark_as_cancelled therefore requires confirm: true — confirm with the user first.",
     inputSchema: TransitionInvoiceInputSchema.shape,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     handler: transitionInvoice,
@@ -734,7 +734,7 @@ export const toolDefinitions: ToolDefinition[] = [
     name: "freeagent_reconcile_bank_transaction",
     title: "Reconcile FreeAgent Bank Transaction",
     description:
-      "Explain a bank transaction in one call. Accepts a human-friendly hint (category name like 'Travel', nominal code like '285', or invoice reference like 'INV-001') and resolves it to the correct FreeAgent URL server-side. Auto-fills date and amount from the transaction, so you do not need to call get_bank_transaction or list_categories first. Provide exactly one of `category` or `paid_invoice`.",
+      "Explain a bank transaction in one call. Accepts a human-friendly hint (category name like 'Travel', nominal code like '285', invoice reference like 'INV-001', or bill reference) and resolves it to the correct FreeAgent URL server-side. Auto-fills date and amount from the transaction, so you do not need to call get_bank_transaction or list_categories first. Provide exactly one of `category`, `paid_invoice`, or `paid_bill`.",
     inputSchema: ReconcileBankTransactionInputSchema.shape,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     handler: reconcileBankTransaction,

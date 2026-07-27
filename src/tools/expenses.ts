@@ -89,8 +89,8 @@ export async function listExpenses(
         const attachments = attachmentCount > 0
           ? ` (${attachmentCount} attachment${attachmentCount > 1 ? 's' : ''})`
           : '';
-        const mileage = expense.miles || expense.mileage
-          ? ` | ${expense.miles || expense.mileage} miles (${expense.vehicle_type}${expense.engine_type ? `, ${expense.engine_type}` : ''})`
+        const mileage = expense.mileage || expense.miles
+          ? ` | ${expense.mileage || expense.miles} miles (${expense.vehicle_type}${expense.engine_type ? `, ${expense.engine_type}` : ''})`
           : '';
 
         lines.push(`## ${expense.dated_on} - ${amount} (ID: ${id})`);
@@ -152,7 +152,8 @@ export async function getExpense(
     expense,
     response_format,
     () => {
-      const isMileage = expense.miles !== null && expense.miles !== undefined;
+      const mileageValue = expense.mileage ?? expense.miles;
+  const isMileage = mileageValue !== null && mileageValue !== undefined;
       const title = isMileage ? "Mileage Expense Details" : "Expense Details";
       const lines: string[] = [`# ${title}`, ""];
 
@@ -164,7 +165,7 @@ export async function getExpense(
       lines.push(`- **EC Status**: ${expense.ec_status || 'N/A'}`);
 
       if (isMileage) {
-        lines.push(`- **Miles**: ${expense.miles}`);
+        lines.push(`- **Miles**: ${mileageValue}`);
         lines.push(`- **Vehicle Type**: ${expense.vehicle_type || 'N/A'}`);
         if (expense.initial_mileage) {
           lines.push(`- **Initial Mileage**: ${expense.initial_mileage}`);
@@ -352,7 +353,8 @@ export async function updateExpense(
   const expense = response.data.expense;
   const expenseId = extractIdFromUrl(expense.url);
 
-  const isMileage = expense.miles !== null && expense.miles !== undefined;
+  const mileageValue = expense.mileage ?? expense.miles;
+  const isMileage = mileageValue !== null && mileageValue !== undefined;
   const type = isMileage ? "mileage expense" : "expense";
 
   return `✅ Successfully updated ${type}\n\n` +

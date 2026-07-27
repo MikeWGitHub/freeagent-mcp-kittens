@@ -380,7 +380,7 @@ Create an invoice for contact [ID] dated today with [items]
 All tools include metadata annotations:
 
 - **readOnlyHint**: Whether the tool only reads data (true for list/get operations)
-- **destructiveHint**: Whether the tool deletes or destroys data (false for all current tools)
+- **destructiveHint**: Whether the tool deletes or overwrites data. True for `freeagent_delete_journal_set`, `freeagent_update_journal_set`, `freeagent_delete_bank_transaction_explanation`, `freeagent_delete_attachment`, and `freeagent_delete_note` — all of which require `confirm: true` and reply with an audit record of what was removed
 - **idempotentHint**: Whether repeated calls have the same effect (true for get operations, false for create)
 - **openWorldHint**: Whether the tool interacts with external systems (true for all API tools)
 
@@ -1438,3 +1438,18 @@ The API's `mark_as_filed` / `mark_as_paid` transitions are intentionally NOT exp
 | `freeagent_update_price_list_item` | Catalog item fields. |
 
 There is intentionally no `freeagent_update_contact` (rarely needed; manual correction in the web UI is fine) and no invoice email/send tool (drafting is not sending).
+
+---
+
+## Fork Tools: Journal Sets, Statement Upload, Explanation Delete
+
+These are the fork's original headline additions (pre-dating the July 2026 coverage expansion) and were previously missing from this document entirely.
+
+| Tool | Purpose |
+|---|---|
+| `freeagent_list_journal_sets` / `freeagent_get_journal_set` | List and inspect balanced sets of manual accounting entries, filterable by date range and tag. |
+| `freeagent_create_journal_set` | Create a balanced journal set (debits positive, credits negative, must sum to zero — validated client-side before POST). Categories accept names, nominal codes, or URLs. The intended IoM workflow: zero the Corporation Tax charge each year (0% rate). CAUTION: journal sets created with a `tag` become uneditable in the FreeAgent web UI. Confirm with the user before calling. |
+| `freeagent_update_journal_set` | Modify, add, or remove (`_destroy`) entries on an existing set. The result must still balance. Destructive: overwrites accounting data; confirm first. |
+| `freeagent_delete_journal_set` | Permanently delete a journal set and all its entries. Requires `confirm: true`; the reply records what was removed. |
+| `freeagent_upload_bank_statement` | Add bank transactions via statement upload. FreeAgent silently de-duplicates rows matching an existing transaction's date+amount+description — supply a unique `fitid` or vary the description for deliberate same-day twins. The import is asynchronous, so the tool snapshots the date range beforehand, polls afterwards, and reports exactly which rows imported (paginated, so busy ranges verify correctly). |
+| `freeagent_delete_bank_transaction_explanation` | Delete a single explanation, returning its transaction to unexplained and breaking any transfer pairing. NEVER deletes bank transactions themselves. Requires `confirm: true`; the reply records what was removed. |

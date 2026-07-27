@@ -11,6 +11,7 @@
  */
 
 import type { FreeAgentApiClient } from "../services/api-client.js";
+import { fetchAllPages } from "../services/api-client.js";
 import type {
   FreeAgentInvoice,
   FreeAgentProject,
@@ -18,7 +19,7 @@ import type {
   FreeAgentTimeslip,
 } from "../types.js";
 import type { InvoiceFromTimeslipsInput } from "../schemas/index.js";
-import { extractIdFromUrl } from "../services/formatter.js";
+import { extractIdFromUrl, todayLocalISO } from "../services/formatter.js";
 import { resolveContact } from "../services/resolvers.js";
 
 interface InvoiceItem {
@@ -29,12 +30,12 @@ interface InvoiceItem {
 }
 
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  return todayLocalISO();
 }
 
 function startOfPreviousMonthIso(today = new Date()): string {
   const d = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 1, 1));
-  return d.toISOString().slice(0, 10);
+  return todayLocalISO(d);
 }
 
 async function findProjectsForContact(
@@ -56,11 +57,11 @@ async function findProjectsForContact(
     return [project];
   }
 
-  const response = await client.get<{ projects: FreeAgentProject[] }>(
-    "/projects",
-    { contact: contactUrl, view: "active", per_page: 100 }
+  // Paginate: a single-page read silently dropped projects past 100
+  // (audit B-HIGH-4).
+  const { items: projects } = await fetchAllPages<FreeAgentProject>(
+    client, "/projects", { contact: contactUrl, view: "active" }, "projects"
   );
-  const projects = response.data.projects ?? [];
   if (projects.length === 0) {
     throw new Error(
       `No active projects found for this contact. Create a project first, or pass \`project\` explicitly.`
@@ -75,17 +76,14 @@ async function collectUnbilledTimeslips(
   fromDate: string,
   toDate: string
 ): Promise<FreeAgentTimeslip[]> {
-  const response = await client.get<{ timeslips: FreeAgentTimeslip[] }>(
-    "/timeslips",
-    {
-      project: project.url,
-      view: "unbilled",
-      from_date: fromDate,
-      to_date: toDate,
-      per_page: 100,
-    }
+  // Paginate: a single-page read silently UNDER-INVOICED when a project had
+  // more than 100 unbilled timeslips in range (audit B-HIGH-4).
+  const { items } = await fetchAllPages<FreeAgentTimeslip>(
+    client, "/timeslips",
+    { project: project.url, view: "unbilled", from_date: fromDate, to_date: toDate },
+    "timeslips"
   );
-  return response.data.timeslips ?? [];
+  return items;
 }
 
 async function buildInvoiceItems(

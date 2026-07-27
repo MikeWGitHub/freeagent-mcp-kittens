@@ -8,6 +8,7 @@
  */
 
 import type { FreeAgentApiClient } from "./api-client.js";
+import { fetchAllPages } from "./api-client.js";
 import type { FreeAgentBill, FreeAgentCategory, FreeAgentContact, FreeAgentUser } from "../types.js";
 
 interface CategoryListResponse {
@@ -27,6 +28,26 @@ function flattenCategories(data: CategoryListResponse): FreeAgentCategory[] {
 }
 
 /**
+ * GET /categories/:nominal_code wraps the result under a key that depends on
+ * the category's type (income_categories, admin_expenses_categories, ...),
+ * NOT under "category" (dev.freeagent.com/docs/categories). Accept any of the
+ * known keys, tolerating both object and single-element array. Shared with
+ * getCategory in tools/categories.ts, which read the wrong key until Jul 2026
+ * (audit B-CRIT-1).
+ */
+export function unwrapSingleCategory(
+  data: Record<string, FreeAgentCategory | FreeAgentCategory[] | undefined>
+): FreeAgentCategory | undefined {
+  const wrapped =
+    data.category ??
+    data.income_categories ??
+    data.cost_of_sales_categories ??
+    data.admin_expenses_categories ??
+    data.general_categories;
+  return Array.isArray(wrapped) ? wrapped[0] : wrapped;
+}
+
+/**
  * Resolve a category hint (URL, nominal code, name) to its canonical URL.
  *
  * Prefers an exact case-insensitive match on description before falling back
@@ -40,20 +61,11 @@ export async function resolveCategory(
   if (hint.startsWith("http")) return hint;
 
   if (/^\d+$/.test(hint)) {
-    // GET /categories/:nominal_code wraps the result under a key that depends
-    // on the category's type (income_categories, admin_expenses_categories,
-    // ...), NOT under "category" (dev.freeagent.com/docs/categories). Accept
-    // any of the known keys, tolerating both object and single-element array.
-    const response = await client.get<Record<string, FreeAgentCategory | FreeAgentCategory[] | undefined>>(
-      `/categories/${hint}`
+    const category = unwrapSingleCategory(
+      (await client.get<Record<string, FreeAgentCategory | FreeAgentCategory[] | undefined>>(
+        `/categories/${hint}`
+      )).data
     );
-    const wrapped =
-      response.data.category ??
-      response.data.income_categories ??
-      response.data.cost_of_sales_categories ??
-      response.data.admin_expenses_categories ??
-      response.data.general_categories;
-    const category = Array.isArray(wrapped) ? wrapped[0] : wrapped;
     if (!category?.url) {
       throw new Error(
         `Category ${hint} was returned in an unrecognised shape. ` +
@@ -163,12 +175,11 @@ export async function resolveContact(
     return response.data.contact.url;
   }
 
-  const response = await client.get<{ contacts: FreeAgentContact[] }>(
-    "/contacts",
-    { per_page: 100 }
-  );
-  const contacts = response.data.contacts ?? [];
+  // Page through ALL contacts: a first-page-only read matched the wrong (or
+  // no) contact for accounts with >100 contacts (audit B-HIGH-3).
+  const { items: contacts, capped } = await fetchAllPages<FreeAgentContact>(client, "/contacts", {}, "contacts");
   const lower = hint.toLowerCase();
+  void capped;
 
   const exact = contacts.filter((c) => contactLabel(c).toLowerCase() === lower);
   if (exact.length === 1) return exact[0].url;
@@ -212,11 +223,9 @@ export async function resolveBill(
     return response.data.bill.url;
   }
 
-  const response = await client.get<{ bills: FreeAgentBill[] }>("/bills", {
-    per_page: 100,
-    view: "open",
-  });
-  const matches = (response.data.bills ?? []).filter((b) => b.reference === hint);
+  // Page through all open bills, not just the first 100 (audit B-HIGH-3).
+  const { items: bills, pagesFetched, capped } = await fetchAllPages<FreeAgentBill>(client, "/bills", { view: "open" }, "bills");
+  const matches = bills.filter((b) => b.reference === hint);
 
   if (matches.length === 1) return matches[0].url;
   if (matches.length > 1) {
@@ -225,6 +234,7 @@ export async function resolveBill(
     );
   }
   throw new Error(
-    `No open bill has reference "${hint}". Check the reference, or pass the bill ID/URL directly.`
+    `No open bill has reference "${hint}" (searched ${bills.length} open bills across ${pagesFetched} page(s)${capped ? ", capped" : ""}). ` +
+    `Check the reference, or pass the bill ID/URL directly.`
   );
 }

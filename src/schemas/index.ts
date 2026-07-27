@@ -913,7 +913,10 @@ export const TransitionInvoiceInputSchema = z.object({
     "mark_as_scheduled",
     "convert_to_credit_note"
   ])
-    .describe("Transition to apply. 'mark_as_sent' moves Draft → Sent, 'mark_as_cancelled' voids a sent invoice, 'mark_as_draft' rolls back to Draft, 'mark_as_scheduled' queues a future send, 'convert_to_credit_note' creates a credit note against the invoice.")
+    .describe("Transition to apply. 'mark_as_sent' moves Draft → Sent (and re-opens a cancelled invoice), 'mark_as_cancelled' WRITES OFF a sent invoice as unpaid (requires confirm: true), 'mark_as_draft' rolls back to Draft, 'mark_as_scheduled' queues a future send, 'convert_to_credit_note' creates a credit note against the invoice."),
+  confirm: z.boolean()
+    .optional()
+    .describe("Required (true) for mark_as_cancelled, which WRITES OFF the invoice as unpaid. Confirm with the user first. Ignored for other actions."),
 }).strict();
 
 // Intent-bundle: draft an invoice from a contact's unbilled timeslips.
