@@ -87,14 +87,28 @@ export async function reconcileBankTransaction(
   );
   const tx = txResponse.data.bank_transaction;
 
+  // The bank transaction API returns `amount` (full value) and
+  // `unexplained_amount` (what remains to explain); it has NO gross_value
+  // field. Reading tx.gross_value sent undefined, which FreeAgent stored as
+  // a 0.00 explanation, silently leaving the transaction unexplained
+  // (observed live, 27 Jul 2026). Prefer the unexplained remainder so
+  // partially-explained transactions reconcile their outstanding amount.
+  const amount = tx.unexplained_amount ?? tx.amount ?? tx.gross_value;
+  if (amount === undefined || Number(amount) === 0) {
+    throw new Error(
+      `Bank transaction ${bank_transaction_id} has no unexplained amount to reconcile. ` +
+      "It may already be fully explained."
+    );
+  }
   const payload: Record<string, unknown> = {
     bank_transaction: tx.url,
     dated_on: tx.dated_on,
-    gross_value: tx.gross_value,
+    gross_value: amount,
   };
   if (description) payload.description = description;
   if (marked_for_review !== undefined) payload.marked_for_review = marked_for_review;
   if (receipt_reference) payload.receipt_reference = receipt_reference;
+  if (params.sales_tax_status) payload.sales_tax_status = params.sales_tax_status;
 
   let resolvedKind: "category" | "invoice" | "bill";
   if (category) {

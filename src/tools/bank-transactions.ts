@@ -234,6 +234,7 @@ export async function createBankTransactionExplanation(
   // Tax information
   if (params.sales_tax_rate) explanationPayload.sales_tax_rate = params.sales_tax_rate;
   if (params.sales_tax_value) explanationPayload.sales_tax_value = params.sales_tax_value;
+  if (params.sales_tax_status) explanationPayload.sales_tax_status = params.sales_tax_status;
 
   // Transfer information
   if (params.transfer_bank_account) {
@@ -331,6 +332,7 @@ export async function updateBankTransactionExplanation(
   // Tax information
   if (updateFields.sales_tax_rate !== undefined) explanationPayload.sales_tax_rate = updateFields.sales_tax_rate;
   if (updateFields.sales_tax_value !== undefined) explanationPayload.sales_tax_value = updateFields.sales_tax_value;
+  if (updateFields.sales_tax_status !== undefined) explanationPayload.sales_tax_status = updateFields.sales_tax_status;
 
   // Transfer information
   if (updateFields.transfer_bank_account !== undefined) {

@@ -614,6 +614,9 @@ export const CreateBankTransactionExplanationInputSchema = z.object({
   sales_tax_value: z.string()
     .optional()
     .describe("Sales tax amount"),
+  sales_tax_status: z.enum(["TAXABLE", "EXEMPT", "OUT_OF_SCOPE"])
+    .optional()
+    .describe("VAT treatment of the amount. TAXABLE (default) applies the rate; EXEMPT = VAT-exempt supply; OUT_OF_SCOPE = outside the scope of VAT entirely (e.g. Patreon and Google AdSense income). Distinct from a 0% rate."),
   // Transfer information
   transfer_bank_account: z.string()
     .optional()
@@ -670,6 +673,9 @@ export const UpdateBankTransactionExplanationInputSchema = z.object({
   sales_tax_value: z.string()
     .optional()
     .describe("Sales tax amount"),
+  sales_tax_status: z.enum(["TAXABLE", "EXEMPT", "OUT_OF_SCOPE"])
+    .optional()
+    .describe("VAT treatment of the amount. TAXABLE (default) applies the rate; EXEMPT = VAT-exempt supply; OUT_OF_SCOPE = outside the scope of VAT entirely (e.g. Patreon and Google AdSense income). Distinct from a 0% rate."),
   // Transfer information
   transfer_bank_account: z.string()
     .optional()
@@ -990,6 +996,9 @@ export const ReconcileBankTransactionInputSchema = z.object({
   marked_for_review: z.boolean()
     .optional()
     .describe("Set true to flag the explanation for human review (e.g. when the match is a guess)."),
+  sales_tax_status: z.enum(["TAXABLE", "EXEMPT", "OUT_OF_SCOPE"])
+    .optional()
+    .describe("VAT treatment. OUT_OF_SCOPE for income outside the scope of VAT (e.g. Patreon, Google AdSense). Distinct from a 0% rate."),
   receipt_reference: z.string()
     .optional()
     .describe("Receipt or transaction reference identifier.")

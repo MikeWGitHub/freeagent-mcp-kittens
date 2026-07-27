@@ -33,7 +33,9 @@ const baseTx = {
   url: "https://api.freeagent.com/v2/bank_transactions/42",
   bank_account: "https://api.freeagent.com/v2/bank_accounts/1",
   dated_on: "2026-04-01",
-  gross_value: "-18.50",
+  // Real bank transactions carry amount/unexplained_amount, NOT gross_value.
+  amount: "-18.50",
+  unexplained_amount: "-18.50",
   description: "UBER TRIP",
 };
 
@@ -56,7 +58,7 @@ describe("reconcileBankTransaction", () => {
           url: "https://api.freeagent.com/v2/bank_transaction_explanations/99",
           bank_transaction: baseTx.url,
           dated_on: baseTx.dated_on,
-          gross_value: baseTx.gross_value,
+          gross_value: baseTx.amount,
           category: "https://api.freeagent.com/v2/categories/285",
           description: "Uber to client meeting",
         },
@@ -103,7 +105,7 @@ describe("reconcileBankTransaction", () => {
           url: "https://api.freeagent.com/v2/bank_transaction_explanations/99",
           bank_transaction: baseTx.url,
           dated_on: baseTx.dated_on,
-          gross_value: baseTx.gross_value,
+          gross_value: baseTx.amount,
           category: "https://api.freeagent.com/v2/categories/285",
         },
       }),
@@ -127,7 +129,7 @@ describe("reconcileBankTransaction", () => {
           url: "https://api.freeagent.com/v2/bank_transaction_explanations/99",
           bank_transaction: baseTx.url,
           dated_on: baseTx.dated_on,
-          gross_value: baseTx.gross_value,
+          gross_value: baseTx.amount,
           category: url,
         },
       }),
@@ -202,7 +204,7 @@ describe("reconcileBankTransaction", () => {
           url: "https://api.freeagent.com/v2/bank_transaction_explanations/99",
           bank_transaction: baseTx.url,
           dated_on: baseTx.dated_on,
-          gross_value: baseTx.gross_value,
+          gross_value: baseTx.amount,
           paid_invoice: invoiceUrl,
         },
       }),
@@ -258,7 +260,7 @@ describe("reconcileBankTransaction", () => {
           url: "https://api.freeagent.com/v2/bank_transaction_explanations/200",
           bank_transaction: baseTx.url,
           dated_on: baseTx.dated_on,
-          gross_value: baseTx.gross_value,
+          gross_value: baseTx.amount,
           paid_bill: billUrl,
         },
       }),
@@ -274,5 +276,128 @@ describe("reconcileBankTransaction", () => {
     expect(post?.body).toMatchObject({
       bank_transaction_explanation: { paid_bill: billUrl },
     });
+  });
+});
+
+describe("sales_tax_status passthrough", () => {
+  it("includes sales_tax_status in the explanation payload when provided", async () => {
+    const { client, calls } = makeClient({
+      get: (path) => {
+        if (path === "/bank_transactions/42") return { bank_transaction: baseTx };
+        if (path === "/categories") {
+          return {
+            income_categories: [
+              { url: "https://api.freeagent.com/v2/categories/001", description: "Sales", nominal_code: "001" },
+            ],
+          };
+        }
+      },
+      post: () => ({
+        bank_transaction_explanation: {
+          url: "https://api.freeagent.com/v2/bank_transaction_explanations/100",
+          bank_transaction: baseTx.url,
+          dated_on: baseTx.dated_on,
+          gross_value: baseTx.amount,
+          category: "https://api.freeagent.com/v2/categories/001",
+        },
+      }),
+    });
+
+    await reconcileBankTransaction(client, {
+      bank_transaction_id: "42",
+      category: "Sales",
+      description: "PATREON INCOME",
+      sales_tax_status: "OUT_OF_SCOPE",
+    } as Parameters<typeof reconcileBankTransaction>[1]);
+
+    const post = calls.find((c) => c.method === "post");
+    expect(post).toBeDefined();
+    const body = post!.body as { bank_transaction_explanation: Record<string, unknown> };
+    expect(body.bank_transaction_explanation.sales_tax_status).toBe("OUT_OF_SCOPE");
+  });
+
+  it("omits sales_tax_status when not provided", async () => {
+    const { client, calls } = makeClient({
+      get: (path) => {
+        if (path === "/bank_transactions/42") return { bank_transaction: baseTx };
+        if (path === "/categories") {
+          return {
+            admin_expenses_categories: [
+              { url: "https://api.freeagent.com/v2/categories/285", description: "Travel", nominal_code: "285" },
+            ],
+          };
+        }
+      },
+      post: () => ({
+        bank_transaction_explanation: {
+          url: "https://api.freeagent.com/v2/bank_transaction_explanations/101",
+          bank_transaction: baseTx.url,
+          dated_on: baseTx.dated_on,
+          gross_value: baseTx.amount,
+          category: "https://api.freeagent.com/v2/categories/285",
+        },
+      }),
+    });
+
+    await reconcileBankTransaction(client, {
+      bank_transaction_id: "42",
+      category: "Travel",
+    } as Parameters<typeof reconcileBankTransaction>[1]);
+
+    const post = calls.find((c) => c.method === "post");
+    const body = post!.body as { bank_transaction_explanation: Record<string, unknown> };
+    expect("sales_tax_status" in body.bank_transaction_explanation).toBe(false);
+  });
+});
+
+describe("amount sourcing", () => {
+  it("uses unexplained_amount for a partially explained transaction", async () => {
+    const partialTx = { ...baseTx, amount: "-100.00", unexplained_amount: "-40.00" };
+    const { client, calls } = makeClient({
+      get: (path) => {
+        if (path === "/bank_transactions/42") return { bank_transaction: partialTx };
+        if (path === "/categories") {
+          return {
+            admin_expenses_categories: [
+              { url: "https://api.freeagent.com/v2/categories/285", description: "Travel", nominal_code: "285" },
+            ],
+          };
+        }
+      },
+      post: () => ({
+        bank_transaction_explanation: {
+          url: "https://api.freeagent.com/v2/bank_transaction_explanations/102",
+          bank_transaction: baseTx.url,
+          dated_on: baseTx.dated_on,
+          gross_value: "-40.00",
+          category: "https://api.freeagent.com/v2/categories/285",
+        },
+      }),
+    });
+
+    await reconcileBankTransaction(client, {
+      bank_transaction_id: "42",
+      category: "Travel",
+    } as Parameters<typeof reconcileBankTransaction>[1]);
+
+    const post = calls.find((c) => c.method === "post");
+    const body = post!.body as { bank_transaction_explanation: Record<string, unknown> };
+    expect(body.bank_transaction_explanation.gross_value).toBe("-40.00");
+  });
+
+  it("refuses to create a zero-value explanation when the transaction is fully explained", async () => {
+    const explainedTx = { ...baseTx, amount: "-18.50", unexplained_amount: "0.0" };
+    const { client } = makeClient({
+      get: (path) => {
+        if (path === "/bank_transactions/42") return { bank_transaction: explainedTx };
+      },
+    });
+
+    await expect(
+      reconcileBankTransaction(client, {
+        bank_transaction_id: "42",
+        category: "Travel",
+      } as Parameters<typeof reconcileBankTransaction>[1])
+    ).rejects.toThrow(/no unexplained amount/);
   });
 });
