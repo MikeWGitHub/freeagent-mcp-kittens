@@ -68,7 +68,7 @@ vercel env add FREEAGENT_USE_SANDBOX
 vercel --prod
 
 # Or push to GitHub (if using GitHub integration)
-git push origin main
+git push origin master
 ```
 
 After deployment, Vercel will provide your production URL, e.g., `https://your-project.vercel.app`
@@ -170,7 +170,7 @@ Expected response:
 {
   "status": "ok",
   "service": "freeagent-mcp-server",
-  "version": "1.0.0",
+  "version": "1.1.2",
   "oauth_mode": "jwt-stateless",
   "freeagent_environment": "sandbox"
 }
@@ -257,6 +257,9 @@ export FREEAGENT_CLIENT_ID="your_client_id"
 export FREEAGENT_CLIENT_SECRET="your_client_secret"
 export FREEAGENT_USE_SANDBOX="true"
 export BASE_URL="http://localhost:3000"
+# REQUIRED for any serverless deployment; generate with: openssl rand -hex 32
+# Without it, every cold start mints a new random secret and all tokens break.
+export JWT_SECRET="your_64_char_hex_secret"
 ```
 
 2. Run locally:
@@ -264,7 +267,7 @@ export BASE_URL="http://localhost:3000"
 vercel dev
 ```
 
-3. Add `http://localhost:3000` to your FreeAgent app's redirect URIs
+3. Add `http://localhost:3000/oauth/callback` to your FreeAgent app's redirect URIs — the path matters: the server handles the callback at `/oauth/callback`, not at the base URL
 
 ## Migration from Non-OAuth Setup
 

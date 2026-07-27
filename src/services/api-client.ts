@@ -328,13 +328,18 @@ export class FreeAgentApiClient {
 
         // Rate limiting (surfaced only after automatic retries are exhausted)
         if (status === 429) {
-          const retryAfter = axiosError.response.headers["retry-after"];
+          // Parse the header the same way the retry path does, rather than
+          // echoing it raw with a fallback that disagreed with the actual
+          // default wait (audit finding, v1.1.1 pass).
+          const waitSeconds = Math.ceil(
+            parseRetryAfterMs(axiosError.response.headers["retry-after"]) / 1000
+          );
           const limit = this.useSandbox
             ? "5 requests per 60 seconds (sandbox)"
             : "15 requests per 60 seconds";
           return new Error(
             `Rate limit exceeded and automatic retries (${RATE_LIMIT_MAX_RETRIES}) were exhausted. ` +
-            `Wait ${retryAfter || 60} seconds before the next call. FreeAgent allows ${limit}.`
+            `Wait ${waitSeconds} seconds before the next call. FreeAgent allows ${limit}.`
           );
         }
 

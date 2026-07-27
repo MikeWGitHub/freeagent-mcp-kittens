@@ -179,7 +179,6 @@ export async function resolveContact(
   // no) contact for accounts with >100 contacts (audit B-HIGH-3).
   const { items: contacts, capped } = await fetchAllPages<FreeAgentContact>(client, "/contacts", {}, "contacts");
   const lower = hint.toLowerCase();
-  void capped;
 
   const exact = contacts.filter((c) => contactLabel(c).toLowerCase() === lower);
   if (exact.length === 1) return exact[0].url;
@@ -204,7 +203,8 @@ export async function resolveContact(
   }
 
   throw new Error(
-    `No contact matches "${hint}". Call freeagent_list_contacts to see available contacts.`
+    `No contact matches "${hint}" (searched ${contacts.length} contacts${capped ? ", list capped at 1000 — pass an ID or URL" : ""}). ` +
+    `Call freeagent_list_contacts to see available contacts.`
   );
 }
 

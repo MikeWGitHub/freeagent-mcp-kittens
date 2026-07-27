@@ -254,7 +254,7 @@ freeagent-mcp-server/
 
 ### CI
 
-GitHub Actions runs on every push to `main` and on pull requests:
+GitHub Actions runs on every push to `master` and on pull requests:
 - **Lint**: ESLint with TypeScript rules
 - **Test**: Vitest unit tests (no external API calls)
 - **Build**: TypeScript compilation check

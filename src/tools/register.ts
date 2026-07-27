@@ -169,7 +169,8 @@ export const toolDefinitions: ToolDefinition[] = [
     description:
       "Move a FreeAgent invoice between lifecycle states. 'mark_as_sent' moves Draft → Sent and also re-opens a cancelled invoice; 'mark_as_draft' rolls back to Draft; 'mark_as_scheduled' queues a future send; 'convert_to_credit_note' creates a credit note against the invoice. CAUTION: 'mark_as_cancelled' WRITES OFF a sent invoice as unpaid (it does not merely void it) — the invoice must be sent with a past due date, and the write-off has accounting consequences; reversing it via the API is undocumented (the web UI can remove a write-off). mark_as_cancelled therefore requires confirm: true — confirm with the user first.",
     inputSchema: TransitionInvoiceInputSchema.shape,
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    // destructiveHint because mark_as_cancelled writes the invoice off.
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
     handler: transitionInvoice,
   },
 
@@ -510,7 +511,7 @@ export const toolDefinitions: ToolDefinition[] = [
   {
     name: "freeagent_update_journal_set",
     title: "Update FreeAgent Journal Set",
-    description: "Update a journal set: change date/description, modify entries, add entries, or remove entries (_destroy). Overwrites existing accounting data: confirm with the user before calling.",
+    description: "Update a journal set: change date/description, modify entries, add entries, or remove entries (_destroy). Requires confirm: true — it overwrites existing accounting data. The post-update set is balance-checked client-side before the write.",
     inputSchema: UpdateJournalSetInputSchema.shape,
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     handler: updateJournalSet,
@@ -528,7 +529,7 @@ export const toolDefinitions: ToolDefinition[] = [
   {
     name: "freeagent_upload_bank_statement",
     title: "Upload FreeAgent Bank Statement",
-    description: "Add bank transactions to an account via statement upload. WARNING: FreeAgent silently de-duplicates rows matching an existing transaction's date+amount+description; vary the description or set a unique fitid to add deliberate same-day twins. The tool verifies the import and reports dropped rows. Confirm with the user before calling.",
+    description: "Add bank transactions to an account via statement upload. Requires confirm: true. WARNING: FreeAgent silently de-duplicates rows matching an existing transaction's date+amount+description; vary the description or set a unique fitid to add deliberate same-day twins. The tool verifies the import (paginated) and reports dropped rows.",
     inputSchema: UploadBankStatementInputSchema.shape,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     handler: (apiClient, params) => uploadBankStatement(apiClient, params),

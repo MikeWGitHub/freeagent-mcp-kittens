@@ -102,6 +102,7 @@ describe("UploadBankStatementInputSchema", () => {
   it("accepts a well-formed statement row", () => {
     const result = UploadBankStatementInputSchema.safeParse({
       bank_account: "235558",
+      confirm: true,
       transactions: [
         {
           dated_on: "2023-06-12",
@@ -117,7 +118,16 @@ describe("UploadBankStatementInputSchema", () => {
   it("rejects an empty transaction list", () => {
     const result = UploadBankStatementInputSchema.safeParse({
       bank_account: "235558",
+      confirm: true,
       transactions: [],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects an upload without confirm: true", () => {
+    const result = UploadBankStatementInputSchema.safeParse({
+      bank_account: "235558",
+      transactions: [{ dated_on: "2023-06-12", amount: -500, description: "x" }],
     });
     expect(result.success).toBe(false);
   });
@@ -125,6 +135,7 @@ describe("UploadBankStatementInputSchema", () => {
   it("rejects unknown transaction types", () => {
     const result = UploadBankStatementInputSchema.safeParse({
       bank_account: "235558",
+      confirm: true,
       transactions: [
         { dated_on: "2023-06-12", amount: -500, description: "x", transaction_type: "BOGUS" },
       ],

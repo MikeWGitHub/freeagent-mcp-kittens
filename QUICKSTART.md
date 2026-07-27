@@ -101,7 +101,7 @@ Expected response:
 {
   "status": "ok",
   "service": "freeagent-mcp-server",
-  "version": "1.0.0",
+  "version": "1.1.2",
   "oauth_mode": "jwt-stateless",
   "freeagent_environment": "sandbox"
 }

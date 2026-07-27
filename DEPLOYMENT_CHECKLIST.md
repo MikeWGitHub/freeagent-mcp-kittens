@@ -39,7 +39,7 @@ Set these in Vercel Dashboard → Settings → Environment Variables:
    {
      "status": "ok",
      "service": "freeagent-mcp-server",
-     "version": "1.0.0",
+     "version": "1.1.2",
      "oauth_mode": "jwt-stateless",
      "freeagent_environment": "sandbox"
    }
@@ -110,3 +110,9 @@ vercel logs
 - [Vercel Deployment Guide](./VERCEL_DEPLOYMENT.md)
 - [FreeAgent OAuth Docs](https://dev.freeagent.com/docs/oauth)
 - [MCP Authorization Spec](https://modelcontextprotocol.io/docs/concepts/authorization)
+
+## Required secrets (serverless)
+
+- [ ] `JWT_SECRET` set (generate with `openssl rand -hex 32`). The server FAILS CLOSED on Vercel without it — a per-cold-start random secret would invalidate every issued token.
+- [ ] `PRODUCTION_URL` set to the stable deployment URL so OAuth issuer/callback URLs do not vary between preview deployments.
+- [ ] FreeAgent app redirect URI registered as `<PRODUCTION_URL>/oauth/callback` (the exact path matters).

@@ -41,6 +41,7 @@ function clientWithListings(listings: ReturnType<typeof txn>[][]): {
 
 const twoRows: UploadBankStatementInput = {
   bank_account: "47248",
+  confirm: true,
   transactions: [
     { dated_on: "2026-07-19", amount: -12.34, description: "ROW A", fitid: "A1" },
     { dated_on: "2026-07-19", amount: -23.45, description: "ROW B", fitid: "B1" },
@@ -122,6 +123,7 @@ describe("uploadBankStatement verification", () => {
   it("queries the full date range spanned by the sent rows", async () => {
     const multiDate: UploadBankStatementInput = {
       bank_account: "47248",
+      confirm: true,
       transactions: [
         { dated_on: "2026-07-10", amount: -1, description: "EARLY" },
         { dated_on: "2026-07-19", amount: -2, description: "LATE" },

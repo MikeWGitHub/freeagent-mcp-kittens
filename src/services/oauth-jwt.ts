@@ -332,7 +332,7 @@ export class FreeAgentJWTOAuthProvider implements OAuthServerProvider {
     try {
 
       // Verify and decode the refresh token JWT
-      const decoded = jwt.verify(refreshToken, JWT_SECRET) as JWTPayload & {
+      const decoded = jwt.verify(refreshToken, JWT_SECRET, { algorithms: ["HS256"] }) as JWTPayload & {
         type: string;
         clientMetadata?: OAuthClientInformationFull;
       };
@@ -499,7 +499,7 @@ export class FreeAgentJWTOAuthProvider implements OAuthServerProvider {
    */
   async verifyAccessToken(token: string): Promise<AuthInfo> {
     try {
-      const decoded = jwt.verify(token, JWT_SECRET) as JWTPayload;
+      const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ["HS256"] }) as JWTPayload;
 
       return {
         token,
@@ -536,7 +536,7 @@ export class FreeAgentJWTOAuthProvider implements OAuthServerProvider {
  */
 export function getFreeAgentTokenFromJWT(mcpToken: string): string | undefined {
   try {
-    const decoded = jwt.verify(mcpToken, JWT_SECRET) as JWTPayload;
+    const decoded = jwt.verify(mcpToken, JWT_SECRET, { algorithms: ["HS256"] }) as JWTPayload;
     return decoded.freeagentAccessToken;
   } catch {
     return undefined;
