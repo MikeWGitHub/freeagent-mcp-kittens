@@ -2,6 +2,16 @@
 
 All notable changes to this fork are documented here. Versions are git tags; see GitHub Releases for full notes.
 
+## [1.2.1] - 2026-08-21
+
+Ship tag for the v1.2 backlog. Tag `v1.2.0` was cut before the review follow-up and is not rewritten.
+
+- Trial balance never claims "(balances)" when pagination is capped or a single 25/100-row page arrives without Link headers; warning sits at the top of the markdown; `truncateIfNeeded` applies.
+- Shared `buildAttachmentPayload` for explanation create/update and expense create.
+- `/health` reports whether static bearer is enabled, not the scope. Auth success log uses `mode: "static"` and does not log tokens.
+- Tests: `registerAllTools({ scope: "read" })` does not register writes; `callTool` on a read catalog rejects write tools.
+- Version identity is 1.2.1 in `package.json`, `SERVER_VERSION`, CHANGELOG, and `/health`. Tags `v1.1.2` and `v1.2.0` were not rewritten.
+
 ## [1.2.0] - 2026-08-21
 
 Backlog: trial balance completeness, explanation attachments on update, invoice reminder setting, journal create confirm, hosted static-bearer auth.
