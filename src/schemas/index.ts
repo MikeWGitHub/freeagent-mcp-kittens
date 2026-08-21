@@ -701,7 +701,10 @@ export const UpdateBankTransactionExplanationInputSchema = z.object({
   // Capital asset depreciation
   depreciation_profile: DepreciationProfileSchema
     .optional()
-    .describe("Depreciation profile when this explanation creates/updates a capital asset (category must be a capital asset sub-category like '602-1'). Assets created with a depreciation_profile can only be updated with one.")
+    .describe("Depreciation profile when this explanation creates/updates a capital asset (category must be a capital asset sub-category like '602-1'). Assets created with a depreciation_profile can only be updated with one."),
+  attachment: AttachmentSchema
+    .optional()
+    .describe("Optional file attachment for the explanation (same 8MB decoded-size limit and content types as create)")
 }).strict();
 
 export const UpdateTimeslipInputSchema = z.object({
@@ -1125,6 +1128,8 @@ export const CreateJournalSetInputSchema = z.object({
     .describe("Date the journal entries take effect (YYYY-MM-DD)."),
   description: z.string().min(1)
     .describe("Description of the journal set (e.g. 'FY24-25 Corporation Tax zeroing - IoM 0% rate')."),
+  confirm: z.literal(true)
+    .describe("Must be exactly true. Acknowledges this posts real journal entries that move account balances."),
   journal_entries: z.array(JournalEntryInputSchema)
     .min(2)
     .describe("The entries making up the set. Must balance: debit values must sum to zero."),
@@ -1463,6 +1468,8 @@ export const UpdateInvoiceInputSchema = z.object({
   po_reference: z.string().optional().describe("New PO reference"),
   comments: z.string().optional(),
   discount_percent: z.string().optional(),
+  send_reminder_emails: z.boolean().optional()
+    .describe("Toggle FreeAgent's automatic overdue-invoice reminder emails for this invoice. true enables reminders; false disables them. This changes outbound email behaviour on the live account (it does not send an email immediately)."),
   invoice_items: z.array(UpdateInvoiceItemSchema).optional()
     .describe("Line items to add (no id), modify (id + fields), or remove (id + _destroy: 1). Status changes are NOT possible here; use freeagent_transition_invoice.")
 }).strict();

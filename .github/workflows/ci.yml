@@ -26,5 +26,8 @@ jobs:
       - name: Test
         run: bun run test
 
+      - name: Typecheck (including api/)
+        run: bun run typecheck
+
       - name: Build
         run: bun run build

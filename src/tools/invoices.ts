@@ -405,7 +405,7 @@ export async function updateInvoice(
   }
   for (const key of [
     "dated_on", "due_on", "payment_terms_in_days", "reference", "po_reference",
-    "comments", "discount_percent", "invoice_items",
+    "comments", "discount_percent", "send_reminder_emails", "invoice_items",
   ] as const) {
     if (fields[key] !== undefined) invoiceData[key] = fields[key];
   }

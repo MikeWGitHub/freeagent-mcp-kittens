@@ -21,6 +21,57 @@ import {
   extractIdFromUrl
 } from "../services/formatter.js";
 
+type ExplanationAttachment = {
+  data: string;
+  is_gzipped?: boolean;
+  file_name: string;
+  content_type: "application/pdf" | "image/png" | "image/jpeg" | "image/gif";
+  description?: string;
+};
+
+function isAttachmentTooLarge(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const e = error as { code?: string; message?: string };
+  const message = (e.message ?? "").toLowerCase();
+  return e.code === "ERR_BUFFER_TOO_LARGE" || message.includes("maxoutputlength") || message.includes("too large");
+}
+
+/**
+ * Decode (and optionally gunzip) an explanation attachment, enforcing the
+ * 8MB decoded-size cap including the gzip maxOutputLength guard.
+ */
+export function buildAttachmentPayload(attachment: ExplanationAttachment): Record<string, string> {
+  let bytes: Buffer;
+
+  if (attachment.is_gzipped) {
+    try {
+      bytes = gunzipSync(Buffer.from(attachment.data, "base64"), { maxOutputLength: MAX_ATTACHMENT_BYTES });
+    } catch (error) {
+      if (isAttachmentTooLarge(error)) {
+        throw new Error(
+          `Attachment exceeds the ${MAX_ATTACHMENT_BYTES} byte (8MB) decoded-size limit after decompression.`
+        );
+      }
+      throw new Error(`Failed to decompress gzipped attachment: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
+  } else {
+    bytes = Buffer.from(attachment.data, "base64");
+    if (bytes.byteLength > MAX_ATTACHMENT_BYTES) {
+      throw new Error(
+        `Attachment exceeds the ${MAX_ATTACHMENT_BYTES} byte (8MB) decoded-size limit.`
+      );
+    }
+  }
+
+  const payload: Record<string, string> = {
+    data: bytes.toString("base64"),
+    file_name: attachment.file_name,
+    content_type: attachment.content_type,
+  };
+  if (attachment.description) payload.description = attachment.description;
+  return payload;
+}
+
 /**
  * List bank transaction explanations with optional filtering and pagination
  */
@@ -247,35 +298,8 @@ export async function createBankTransactionExplanation(
     explanationPayload.depreciation_profile = params.depreciation_profile;
   }
 
-  // Add attachment if provided
   if (params.attachment) {
-    let attachmentData = params.attachment.data;
-
-    // If attachment is gzipped, decompress it before sending to FreeAgent
-    if (params.attachment.is_gzipped) {
-      try {
-        // Decode Base64 to Buffer
-        const compressedBuffer = Buffer.from(attachmentData, 'base64');
-        // Decompress using gunzip
-        // maxOutputLength bounds the decompressed size: without it a small
-        // gzip bomb could exhaust process memory (audit S-MED-1).
-        const decompressedBuffer = gunzipSync(compressedBuffer, { maxOutputLength: MAX_ATTACHMENT_BYTES });
-        // Re-encode to Base64
-        attachmentData = decompressedBuffer.toString('base64');
-      } catch (error) {
-        throw new Error(`Failed to decompress gzipped attachment: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      }
-    }
-
-    const attachmentPayload: Record<string, string> = {
-      data: attachmentData,
-      file_name: params.attachment.file_name,
-      content_type: params.attachment.content_type
-    };
-    if (params.attachment.description) {
-      attachmentPayload.description = params.attachment.description;
-    }
-    explanationPayload.attachment = attachmentPayload;
+    explanationPayload.attachment = buildAttachmentPayload(params.attachment);
   }
 
   const response = await client.post<{ bank_transaction_explanation: FreeAgentBankTransactionExplanation }>(
@@ -352,6 +376,10 @@ export async function updateBankTransactionExplanation(
     explanationPayload.depreciation_profile = updateFields.depreciation_profile;
   }
 
+  if (updateFields.attachment !== undefined) {
+    explanationPayload.attachment = buildAttachmentPayload(updateFields.attachment);
+  }
+
   const response = await client.put<{ bank_transaction_explanation: FreeAgentBankTransactionExplanation }>(
     explanationUrl,
     { bank_transaction_explanation: explanationPayload }
@@ -367,11 +395,14 @@ export async function updateBankTransactionExplanation(
   else if (explanation.paid_user) explanationType = "user payment";
   else if (explanation.transfer_bank_account) explanationType = "bank transfer";
 
+  const attachmentInfo = params.attachment ? `\n**Attachment**: ${params.attachment.file_name}` : "";
+
   return `✅ Successfully updated bank transaction explanation (${explanationType})\n\n` +
     `**Explanation ID**: ${explanationId}\n` +
     `**Date**: ${explanation.dated_on}\n` +
     `**Amount**: ${explanation.gross_value}\n` +
     (explanation.description ? `**Description**: ${explanation.description}\n` : '') +
     (explanation.category ? `**Category**: ${explanation.category}\n` : '') +
-    `**URL**: ${explanation.url}`;
+    `**URL**: ${explanation.url}` +
+    attachmentInfo;
 }

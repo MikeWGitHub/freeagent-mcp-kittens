@@ -10,14 +10,29 @@
  */
 
 import express from "express";
+import type { Request, Response, NextFunction } from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { mcpAuthRouter } from "@modelcontextprotocol/sdk/server/auth/router.js";
 import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js";
 import { createFreeAgentJWTOAuthProvider, getFreeAgentTokenFromJWT } from "../src/services/oauth-jwt.js";
 import { FreeAgentApiClient } from "../src/services/api-client.js";
+import type { RefreshConfig } from "../src/services/api-client.js";
 import { getBaseUrl, SERVER_VERSION } from "../src/constants.js";
 import { registerAllTools } from "../src/tools/register.js";
+import {
+  assertStaticBearerConfig,
+  extractBearerToken,
+  getCachedFreeAgentAccessToken,
+  isStaticBearerConfigured,
+  parseStaticScope,
+  staticBearerMatches,
+} from "../src/services/static-bearer.js";
+import type { McpStaticScope } from "../src/services/static-bearer.js";
+
+// Fail closed: a configured static bearer without a refresh token is broken,
+// matching the JWT_SECRET check in oauth-jwt.ts.
+assertStaticBearerConfig();
 
 // Configuration
 const USE_SANDBOX = process.env.FREEAGENT_USE_SANDBOX === "true";
@@ -37,13 +52,14 @@ app.use(express.json());
 const oauthProvider = createFreeAgentJWTOAuthProvider();
 
 // Add error logging for OAuth token endpoint
-app.use((req: any, res: any, next: any) => {
+app.use((req: Request, res: Response, next: NextFunction) => {
   if (req.path === '/token') {
     const originalJson = res.json.bind(res);
 
     // Only log errors, not successful requests
-    res.json = function(body: any) {
-      if (body.error) {
+    res.json = function(body: unknown) {
+      if (body && typeof body === "object" && "error" in body) {
+        const errBody = body as { error?: unknown; error_description?: unknown };
         console.error(JSON.stringify({
           timestamp: new Date().toISOString(),
           level: "error",
@@ -51,8 +67,8 @@ app.use((req: any, res: any, next: any) => {
           message: "Token endpoint error",
           data: {
             grantType: req.body?.grant_type,
-            error: body.error,
-            errorDescription: body.error_description,
+            error: errBody.error,
+            errorDescription: errBody.error_description,
           }
         }));
       }
@@ -74,7 +90,7 @@ app.use(mcpAuthRouter({
 }));
 
 // OAuth callback handler (receives redirect from FreeAgent)
-app.get("/oauth/callback", async (req: any, res: any) => {
+app.get("/oauth/callback", async (req: Request, res: Response) => {
   try {
     const { code, state, error } = req.query;
 
@@ -103,15 +119,30 @@ app.get("/oauth/callback", async (req: any, res: any) => {
   }
 });
 
+interface McpRequest extends Request {
+  mcpAuthMode?: "static" | "jwt";
+}
+
+function staticRefreshConfig(): RefreshConfig | undefined {
+  const clientId = process.env.FREEAGENT_CLIENT_ID;
+  const clientSecret = process.env.FREEAGENT_CLIENT_SECRET;
+  const refreshToken = process.env.FREEAGENT_REFRESH_TOKEN;
+  if (!clientId || !clientSecret || !refreshToken) return undefined;
+  return { clientId, clientSecret, refreshToken };
+}
+
 // Create MCP server with tools
-function createMcpServer(freeagentToken: string): McpServer {
+function createMcpServer(
+  freeagentToken: string,
+  options?: { scope?: McpStaticScope; refreshConfig?: RefreshConfig }
+): McpServer {
   const server = new McpServer({
     name: "freeagent-mcp-server",
     version: SERVER_VERSION
   });
 
-  const apiClient = new FreeAgentApiClient(freeagentToken, USE_SANDBOX);
-  registerAllTools(server, apiClient);
+  const apiClient = new FreeAgentApiClient(freeagentToken, USE_SANDBOX, options?.refreshConfig);
+  registerAllTools(server, apiClient, { scope: options?.scope ?? "full" });
 
   return server;
 }
@@ -122,19 +153,40 @@ const bearerAuth = requireBearerAuth({
   resourceMetadataUrl: `${BASE_URL}/.well-known/oauth-protected-resource`
 });
 
-async function handleMcpRequest(req: any, res: any) {
+function mcpAuth(req: McpRequest, res: Response, next: NextFunction): void {
+  const presented = extractBearerToken(req.headers.authorization);
+  if (presented && staticBearerMatches(presented)) {
+    req.mcpAuthMode = "static";
+    next();
+    return;
+  }
+  bearerAuth(req, res, next);
+}
+
+async function handleMcpRequest(req: McpRequest, res: Response) {
   try {
-    const mcpToken = req.headers.authorization?.replace("Bearer ", "");
+    const mcpToken = extractBearerToken(req.headers.authorization);
     if (!mcpToken) {
       return res.status(401).json({ error: "No authorization token" });
     }
 
-    const freeagentToken = getFreeAgentTokenFromJWT(mcpToken);
+    let freeagentToken: string | undefined;
+    let scope: McpStaticScope = "full";
+    let refreshConfig: RefreshConfig | undefined;
+
+    if (req.mcpAuthMode === "static") {
+      freeagentToken = await getCachedFreeAgentAccessToken();
+      scope = parseStaticScope(process.env.MCP_STATIC_SCOPE);
+      refreshConfig = staticRefreshConfig();
+    } else {
+      freeagentToken = getFreeAgentTokenFromJWT(mcpToken);
+    }
+
     if (!freeagentToken) {
       return res.status(401).json({ error: "Invalid token" });
     }
 
-    const server = createMcpServer(freeagentToken);
+    const server = createMcpServer(freeagentToken, { scope, refreshConfig });
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined, // Stateless mode - no sessions needed for serverless
     });
@@ -151,20 +203,23 @@ async function handleMcpRequest(req: any, res: any) {
 
 // MCP endpoints - POST for tool calls, GET for SSE stream, DELETE returns 405 (stateless)
 for (const path of ["/mcp", "/"]) {
-  app.post(path, bearerAuth, handleMcpRequest);
-  app.get(path, bearerAuth, handleMcpRequest);
-  app.delete(path, (_req: any, res: any) => {
+  app.post(path, mcpAuth, handleMcpRequest);
+  app.get(path, mcpAuth, handleMcpRequest);
+  app.delete(path, (_req: Request, res: Response) => {
     res.status(405).json({ error: "Method not allowed - server is stateless, no sessions to terminate" });
   });
 }
 
 // Health check
-app.get("/health", (req: any, res: any) => {
+app.get("/health", (_req: Request, res: Response) => {
+  const staticBearer = isStaticBearerConfigured();
   res.json({
     status: "ok",
     service: "freeagent-mcp-server",
     version: SERVER_VERSION,
     oauth_mode: "jwt-stateless",
+    static_bearer: staticBearer,
+    ...(staticBearer ? { static_bearer_scope: parseStaticScope(process.env.MCP_STATIC_SCOPE) } : {}),
     freeagent_environment: USE_SANDBOX ? "sandbox" : "production",
   });
 });

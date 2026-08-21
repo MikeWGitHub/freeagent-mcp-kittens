@@ -1,12 +1,15 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   PaginationSchema,
   ListContactsInputSchema,
   GetContactInputSchema,
   CreateContactInputSchema,
   CreateInvoiceInputSchema,
+  UpdateInvoiceInputSchema,
   ListExpensesInputSchema,
 } from "./index.js";
+import { SERVER_VERSION } from "../constants.js";
 
 describe("PaginationSchema", () => {
   it("accepts valid pagination params", () => {
@@ -157,5 +160,25 @@ describe("ListExpensesInputSchema", () => {
     expect(() =>
       ListExpensesInputSchema.parse({ from_date: "01-01-2024" })
     ).toThrow();
+  });
+});
+
+describe("UpdateInvoiceInputSchema", () => {
+  it("accepts send_reminder_emails as an optional boolean", () => {
+    const result = UpdateInvoiceInputSchema.parse({
+      invoice_id: "1",
+      send_reminder_emails: false,
+    });
+    expect(result.send_reminder_emails).toBe(false);
+  });
+});
+
+describe("version identity", () => {
+  it("SERVER_VERSION matches package.json at 1.2.0", () => {
+    const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as {
+      version: string;
+    };
+    expect(SERVER_VERSION).toBe(pkg.version);
+    expect(SERVER_VERSION).toBe("1.2.0");
   });
 });

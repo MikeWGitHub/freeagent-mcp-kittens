@@ -109,6 +109,11 @@ export async function createJournalSet(
   client: FreeAgentApiClient,
   params: CreateJournalSetInput
 ): Promise<string> {
+  if (params.confirm !== true) {
+    throw new Error(
+      "create_journal_set posts real journal entries that move account balances. Confirm with the user, then re-call with confirm: true."
+    );
+  }
   // The schema-level balance refine does not survive the .shape registration
   // path to the MCP boundary, so enforce it here too (audit, v1.1.1 pass).
   const sum = params.journal_entries.reduce((acc, e) => acc + e.debit_value, 0);

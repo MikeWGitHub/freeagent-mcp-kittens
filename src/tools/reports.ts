@@ -13,6 +13,7 @@
  */
 
 import type { FreeAgentApiClient } from "../services/api-client.js";
+import { fetchAllPages } from "../services/api-client.js";
 import type {
   FreeAgentProfitAndLossSummary,
   FreeAgentTrialBalanceRow,
@@ -134,6 +135,9 @@ export async function getBalanceSheet(
   });
 }
 
+const TRIAL_BALANCE_CAP_WARNING =
+  "⚠️ Trial balance pagination hit the 10-page / 1,000-row cap; later rows are omitted. Narrow the date range for a complete statement.";
+
 export async function getTrialBalance(
   client: FreeAgentApiClient,
   params: GetTrialBalanceInput
@@ -147,13 +151,22 @@ export async function getTrialBalance(
     if (params.to_date) queryParams.to_date = params.to_date;
   }
 
-  const response = await client.get<{ trial_balance_summary: FreeAgentTrialBalanceRow[] }>(
+  // FreeAgent paginates trial balance at 25 rows by default. A full-year TB
+  // is well over one page; a single GET silently truncated the statement.
+  const { items: rows, capped } = await fetchAllPages<FreeAgentTrialBalanceRow>(
+    client,
     endpoint,
-    queryParams
+    queryParams,
+    "trial_balance_summary"
   );
-  const rows = response.data.trial_balance_summary ?? [];
 
-  return formatResponse({ trial_balance_summary: rows }, params.response_format, () => {
+  const payload: {
+    trial_balance_summary: FreeAgentTrialBalanceRow[];
+    warning?: string;
+  } = { trial_balance_summary: rows };
+  if (capped) payload.warning = TRIAL_BALANCE_CAP_WARNING;
+
+  return formatResponse(payload, params.response_format, () => {
     const lines: string[] = [
       params.opening_balances ? "# Trial Balance (Opening Balances)" : "# Trial Balance Summary",
       "",
@@ -163,6 +176,7 @@ export async function getTrialBalance(
     }
     if (rows.length === 0) {
       lines.push("No trial balance rows returned.");
+      if (capped) lines.push("", TRIAL_BALANCE_CAP_WARNING);
       return lines.join("\n");
     }
     lines.push("| Code | Account | Total |", "|---|---|---|");
@@ -175,6 +189,7 @@ export async function getTrialBalance(
     // impossible to miss when reviewing after journal work.
     const sum = rows.reduce((acc, r) => acc + (Number(r.total) || 0), 0);
     lines.push("", `**Sum of all rows**: ${sum.toFixed(2)} ${Math.abs(sum) < 0.005 ? "(balances)" : "⚠️ (does not balance)"}`);
+    if (capped) lines.push("", TRIAL_BALANCE_CAP_WARNING);
     return lines.join("\n");
   });
 }

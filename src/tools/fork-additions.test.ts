@@ -205,6 +205,74 @@ describe("reports", () => {
     expect(result).toContain("| 2026-01 | 100 | - |");
     expect(result).toContain("| 2026-02 | 200 | 50 |");
   });
+
+  it("auto-paginates trial balance and returns every row", async () => {
+    const page1 = Array.from({ length: 25 }, (_, i) => ({
+      display_nominal_code: String(i + 1).padStart(3, "0"),
+      name: `Account ${i + 1}`,
+      total: i === 0 ? "-24.00" : "1.00",
+    }));
+    const page2 = [
+      { display_nominal_code: "026", name: "Account 26", total: "0.00" },
+      { display_nominal_code: "027", name: "Account 27", total: "0.00" },
+    ];
+
+    const calls: Array<{ path: string; params?: unknown }> = [];
+    const client = {
+      get: vi.fn(async (path: string, params?: unknown) => {
+        calls.push({ path, params });
+        const page = (params as { page?: number } | undefined)?.page ?? 1;
+        if (page === 1) {
+          return {
+            data: { trial_balance_summary: page1 },
+            headers: { link: '<https://api.freeagent.com/v2/accounting/trial_balance/summary?page=2>; rel="next"' },
+          };
+        }
+        return { data: { trial_balance_summary: page2 }, headers: {} };
+      }),
+      parsePaginationHeaders: (headers: Record<string, string>) => {
+        const link = headers?.link;
+        if (link && link.includes('rel="next"')) {
+          const match = /[?&]page=(\d+)[^>]*>;\s*rel="next"/.exec(link);
+          return { hasMore: true, nextPage: match ? Number(match[1]) : undefined };
+        }
+        return { hasMore: false };
+      },
+    } as unknown as FreeAgentApiClient;
+
+    const result = await getTrialBalance(client, { opening_balances: false, response_format: MD });
+    expect(calls).toHaveLength(2);
+    expect((calls[0].params as { per_page: number }).per_page).toBe(100);
+    expect(result).toContain("Account 1");
+    expect(result).toContain("Account 26");
+    expect(result).toContain("Account 27");
+    expect(result).not.toContain("1,000-row cap");
+  });
+
+  it("warns when the trial balance pagination cap is hit", async () => {
+    const client = {
+      get: vi.fn(async (_path: string, params?: unknown) => {
+        const page = (params as { page?: number } | undefined)?.page ?? 1;
+        return {
+          data: {
+            trial_balance_summary: [
+              { display_nominal_code: String(page), name: `P${page}`, total: "0.00" },
+            ],
+          },
+          headers: { link: `<https://api.freeagent.com/v2/accounting/trial_balance/summary?page=${page + 1}>; rel="next"` },
+        };
+      }),
+      parsePaginationHeaders: (headers: Record<string, string>) => {
+        const match = /[?&]page=(\d+)[^>]*>;\s*rel="next"/.exec(headers?.link ?? "");
+        return { hasMore: true, nextPage: match ? Number(match[1]) : undefined };
+      },
+    } as unknown as FreeAgentApiClient;
+
+    const result = await getTrialBalance(client, { opening_balances: false, response_format: MD });
+    expect(result).toContain("1,000-row cap");
+    expect(result).toContain("P1");
+    expect(result).toContain("P10");
+  });
 });
 
 describe("statutory returns", () => {
@@ -391,6 +459,25 @@ describe("update tools", () => {
     expect(body.invoice.invoice_items).toEqual([{ id: "195668971", _destroy: 1 }]);
     expect(body.invoice).not.toHaveProperty("dated_on");
     expect(body.invoice).not.toHaveProperty("invoice_id");
+  });
+
+  it("updateInvoice forwards send_reminder_emails", async () => {
+    const { client, calls } = makeClient({
+      put: () => ({
+        invoice: {
+          url: "https://api.freeagent.com/v2/invoices/1",
+          contact: "https://api.freeagent.com/v2/contacts/1",
+          dated_on: "2026-02-15",
+          currency: "GBP",
+          total_value: "10.00",
+          status: "Sent",
+        },
+      }),
+    });
+
+    await updateInvoice(client, { invoice_id: "1", send_reminder_emails: false });
+    const body = calls[0].body as { invoice: Record<string, unknown> };
+    expect(body.invoice.send_reminder_emails).toBe(false);
   });
 
   it("updateInvoice refuses an empty update", async () => {

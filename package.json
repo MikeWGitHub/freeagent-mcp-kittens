@@ -1,11 +1,12 @@
 {
   "name": "freeagent-mcp-server",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "description": "MCP server for FreeAgent accounting API integration",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
     "build": "bun run tsc",
+    "typecheck": "bun run tsc --noEmit -p tsconfig.api.json",
     "start": "bun dist/index.js",
     "dev": "bun run tsc --watch",
     "lint": "eslint src/",

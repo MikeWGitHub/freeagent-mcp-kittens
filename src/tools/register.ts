@@ -78,6 +78,7 @@ import {
   UpdateTaskInputSchema, UpdatePriceListItemInputSchema,
 } from "../schemas/index.js";
 import { searchTools, callTool } from "./tool-search.js";
+import type { McpStaticScope } from "../services/static-bearer.js";
 
 export interface ToolContext {
   clientSupportsElicitation: boolean;
@@ -158,7 +159,7 @@ export const toolDefinitions: ToolDefinition[] = [
     name: "freeagent_update_invoice",
     title: "Update FreeAgent Invoice",
     description:
-      "Update an existing invoice: dates, reference, PO reference, comments, discount, contact, and line items (add without id; modify with id; remove with id + _destroy: 1). Cannot change status — use freeagent_transition_invoice for that. Changes the live account: confirm with the user before calling.",
+      "Update an existing invoice: dates, reference, PO reference, comments, discount, contact, send_reminder_emails (toggles automatic overdue reminder emails; does not send immediately), and line items (add without id; modify with id; remove with id + _destroy: 1). Cannot change status — use freeagent_transition_invoice for that. Changes the live account: confirm with the user before calling.",
     inputSchema: UpdateInvoiceInputSchema.shape,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     handler: updateInvoice,
@@ -297,7 +298,7 @@ export const toolDefinitions: ToolDefinition[] = [
   {
     name: "freeagent_get_trial_balance",
     title: "Get FreeAgent Trial Balance",
-    description: "Per-category totals with nominal codes for a period — one call replaces adding up individual documents, and it's the natural sanity check after journal or reconciliation work. The markdown output verifies the rows sum to zero.",
+    description: "Per-category totals with nominal codes for a period — one call replaces adding up individual documents, and it's the natural sanity check after journal or reconciliation work. Auto-paginates (up to 1,000 rows) and warns if the cap is hit. The markdown output verifies the rows sum to zero.",
     inputSchema: GetTrialBalanceInputSchema.shape,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     handler: getTrialBalance,
@@ -503,7 +504,7 @@ export const toolDefinitions: ToolDefinition[] = [
   {
     name: "freeagent_create_journal_set",
     title: "Create FreeAgent Journal Set",
-    description: "Create a balanced set of journal entries (debits positive, credits negative, must sum to zero). Categories accept names, nominal codes, or URLs. Changes the company's accounts: confirm with the user before calling.",
+    description: "Create a balanced set of journal entries (debits positive, credits negative, must sum to zero). Categories accept names, nominal codes, or URLs. Requires confirm: true — journals move real account balances. Confirm with the user before calling.",
     inputSchema: CreateJournalSetInputSchema.shape,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     handler: createJournalSet,
@@ -726,7 +727,7 @@ export const toolDefinitions: ToolDefinition[] = [
   {
     name: "freeagent_update_bank_transaction_explanation",
     title: "Update FreeAgent Bank Transaction Explanation",
-    description: "Update an existing bank transaction explanation. Only provide the fields you want to change.",
+    description: "Update an existing bank transaction explanation. Only provide the fields you want to change. Accepts an optional attachment (same 8MB decoded-size limit and content types as create).",
     inputSchema: UpdateBankTransactionExplanationInputSchema.shape,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     handler: updateBankTransactionExplanation,
@@ -898,6 +899,48 @@ export function isToolSearchMode(): boolean {
   return raw === "true" || raw === "1";
 }
 
+const READ_TOOL_NAME = /^freeagent_(list|get)_/;
+const CREATE_EXPLANATION = "freeagent_create_bank_transaction_explanation";
+
+function forceMarkedForReview(tool: ToolDefinition): ToolDefinition {
+  return {
+    ...tool,
+    handler: async (apiClient, params, ctx) =>
+      tool.handler(apiClient, { ...params, marked_for_review: true }, ctx),
+  };
+}
+
+/**
+ * Filter the catalog for hosted static-bearer scopes.
+ * - read: list_* / get_* only
+ * - read_draft: read plus create_bank_transaction_explanation (marked_for_review forced true)
+ * - full: the complete catalog
+ */
+export function toolsForScope(
+  scope: McpStaticScope,
+  catalog: ToolDefinition[] = toolDefinitions
+): ToolDefinition[] {
+  if (scope === "full") return catalog;
+  const readTools = catalog.filter((tool) => READ_TOOL_NAME.test(tool.name));
+  if (scope === "read") return readTools;
+  const createExplanation = catalog.find((tool) => tool.name === CREATE_EXPLANATION);
+  if (!createExplanation) return readTools;
+  return [...readTools, forceMarkedForReview(createExplanation)];
+}
+
+function metaToolsFor(catalog: ToolDefinition[]): ToolDefinition[] {
+  return [
+    {
+      ...toolSearchMetaDefinitions[0],
+      handler: (_apiClient, params) => searchTools(catalog, params),
+    },
+    {
+      ...toolSearchMetaDefinitions[1],
+      handler: (apiClient, params, ctx) => callTool(catalog, apiClient, params, ctx),
+    },
+  ];
+}
+
 /**
  * Register FreeAgent tools on an McpServer instance.
  *
@@ -908,8 +951,13 @@ export function isToolSearchMode(): boolean {
  *
  * @param server - The McpServer to register tools on
  * @param apiClient - The FreeAgent API client to use for API calls
+ * @param options.scope - Hosted static-bearer scope; stdio and OAuth/JWT omit this (full catalog)
  */
-export function registerAllTools(server: McpServer, apiClient: FreeAgentApiClient): void {
+export function registerAllTools(
+  server: McpServer,
+  apiClient: FreeAgentApiClient,
+  options?: { scope?: McpStaticScope }
+): void {
   const ctx: ToolContext = {
     get clientSupportsElicitation(): boolean {
       return Boolean(server.server.getClientCapabilities()?.elicitation);
@@ -917,7 +965,8 @@ export function registerAllTools(server: McpServer, apiClient: FreeAgentApiClien
     elicit: (params) => server.server.elicitInput(params),
   };
 
-  const tools = isToolSearchMode() ? toolSearchMetaDefinitions : toolDefinitions;
+  const catalog = toolsForScope(options?.scope ?? "full");
+  const tools = isToolSearchMode() ? metaToolsFor(catalog) : catalog;
 
   for (const tool of tools) {
     server.registerTool(
