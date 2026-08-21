@@ -186,7 +186,7 @@ The full catalog is still reachable — it's just loaded on demand. This mirrors
 |------|-------------|-----------|
 | `freeagent_get_profit_and_loss` | P&L summary for a period (one accounting year) | Yes |
 | `freeagent_get_balance_sheet` | Balance sheet as at a date (or opening balances) | Yes |
-| `freeagent_get_trial_balance` | Per-category totals; auto-paginated (warns at the 1,000-row cap) | Yes |
+| `freeagent_get_trial_balance` | Per-category totals; auto-paginated (warns at cap or missing Link; never claims balance on incomplete data) | Yes |
 | `freeagent_get_cashflow` | Historic incoming/outgoing cash with monthly breakdown | Yes |
 
 ### General ledger

@@ -6,9 +6,12 @@ import {
   parseStaticScope,
   refreshFreeAgentAccessToken,
   resetStaticTokenCache,
+  resolveMcpAuthMode,
   staticBearerMatches,
 } from "./static-bearer.js";
-import { toolDefinitions, toolsForScope } from "../tools/register.js";
+import { toolDefinitions, toolsForScope, registerAllTools } from "../tools/register.js";
+import { callTool } from "../tools/tool-search.js";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 const ENV_KEYS = [
   "MCP_STATIC_BEARER",
@@ -49,6 +52,19 @@ describe("staticBearerMatches", () => {
 
   it("rejects a different-length mismatch without throwing", () => {
     expect(staticBearerMatches("short", "much-longer-secret")).toBe(false);
+  });
+});
+
+describe("resolveMcpAuthMode", () => {
+  it("returns jwt when static bearer is unset", () => {
+    expect(resolveMcpAuthMode("Bearer abc", {})).toBe("jwt");
+  });
+
+  it("returns static only when the presented bearer matches", () => {
+    const env = { MCP_STATIC_BEARER: "shared-secret" };
+    expect(resolveMcpAuthMode("Bearer shared-secret", env)).toBe("static");
+    expect(resolveMcpAuthMode("Bearer wrong-secret", env)).toBe("jwt");
+    expect(resolveMcpAuthMode(undefined, env)).toBe("jwt");
   });
 });
 
@@ -217,5 +233,41 @@ describe("toolsForScope", () => {
       (postedBody as { bank_transaction_explanation: { marked_for_review: boolean } })
         .bank_transaction_explanation.marked_for_review
     ).toBe(true);
+  });
+
+  it("registerAllTools with scope read does not register write tools", () => {
+    const original = process.env.FREEAGENT_TOOL_SEARCH;
+    delete process.env.FREEAGENT_TOOL_SEARCH;
+    const names: string[] = [];
+    const server = {
+      registerTool: (name: string) => {
+        names.push(name);
+      },
+      server: {
+        getClientCapabilities: () => undefined,
+        elicitInput: async () => ({ action: "cancel" }),
+      },
+    } as unknown as McpServer;
+    try {
+      registerAllTools(server, {} as never, { scope: "read" });
+    } finally {
+      if (original === undefined) delete process.env.FREEAGENT_TOOL_SEARCH;
+      else process.env.FREEAGENT_TOOL_SEARCH = original;
+    }
+    expect(names).not.toContain("freeagent_create_invoice");
+    expect(names).not.toContain("freeagent_create_journal_set");
+    expect(names).not.toContain("freeagent_create_bank_transaction_explanation");
+    expect(names.every((n) => /^freeagent_(list|get)_/.test(n))).toBe(true);
+  });
+
+  it("callTool on a read-scoped catalog refuses write tools", async () => {
+    await expect(
+      callTool(
+        toolsForScope("read"),
+        {} as never,
+        { name: "freeagent_create_invoice", arguments: {} },
+        { clientSupportsElicitation: false, elicit: async () => ({ action: "cancel" }) as never }
+      )
+    ).rejects.toThrow(/Unknown tool 'freeagent_create_invoice'/);
   });
 });

@@ -25,7 +25,7 @@ import type {
   GetTrialBalanceInput,
   GetCashflowInput,
 } from "../schemas/index.js";
-import { formatResponse } from "../services/formatter.js";
+import { formatResponse, truncateIfNeeded } from "../services/formatter.js";
 
 export async function getProfitAndLoss(
   client: FreeAgentApiClient,
@@ -138,6 +138,13 @@ export async function getBalanceSheet(
 const TRIAL_BALANCE_CAP_WARNING =
   "⚠️ Trial balance pagination hit the 10-page / 1,000-row cap; later rows are omitted. Narrow the date range for a complete statement.";
 
+function trialBalanceHeaderAbsentWarning(rowCount: number): string {
+  return (
+    `⚠️ Trial balance returned exactly ${rowCount} rows on a single page with no pagination Link header. ` +
+    "FreeAgent's public docs do not document pagination for this endpoint; if the statement looks short, later rows may still be missing."
+  );
+}
+
 export async function getTrialBalance(
   client: FreeAgentApiClient,
   params: GetTrialBalanceInput
@@ -151,20 +158,30 @@ export async function getTrialBalance(
     if (params.to_date) queryParams.to_date = params.to_date;
   }
 
-  // FreeAgent paginates trial balance at 25 rows by default. A full-year TB
-  // is well over one page; a single GET silently truncated the statement.
-  const { items: rows, capped } = await fetchAllPages<FreeAgentTrialBalanceRow>(
+  // Production saw a silent 25-row first page. Official trial-balance docs do
+  // not mention pagination; we still request per_page=100 via fetchAllPages
+  // and follow Link: rel="next" when present.
+  const { items: rows, capped, pagesFetched } = await fetchAllPages<FreeAgentTrialBalanceRow>(
     client,
     endpoint,
     queryParams,
     "trial_balance_summary"
   );
 
+  const headerAbsent =
+    !capped && pagesFetched === 1 && (rows.length === 25 || rows.length === 100);
+  const incomplete = capped || headerAbsent;
+  const warning = capped
+    ? TRIAL_BALANCE_CAP_WARNING
+    : headerAbsent
+      ? trialBalanceHeaderAbsentWarning(rows.length)
+      : undefined;
+
   const payload: {
     trial_balance_summary: FreeAgentTrialBalanceRow[];
     warning?: string;
   } = { trial_balance_summary: rows };
-  if (capped) payload.warning = TRIAL_BALANCE_CAP_WARNING;
+  if (warning) payload.warning = warning;
 
   return formatResponse(payload, params.response_format, () => {
     const lines: string[] = [
@@ -174,23 +191,27 @@ export async function getTrialBalance(
     if (params.from_date || params.to_date) {
       lines.push(`**Period**: ${params.from_date ?? "(period start)"} to ${params.to_date ?? "(today)"}`, "");
     }
+    if (warning) {
+      lines.push(warning, "");
+    }
     if (rows.length === 0) {
       lines.push("No trial balance rows returned.");
-      if (capped) lines.push("", TRIAL_BALANCE_CAP_WARNING);
-      return lines.join("\n");
+      return truncateIfNeeded(lines.join("\n"), { count: 0 });
     }
+    const sum = rows.reduce((acc, r) => acc + (Number(r.total) || 0), 0);
+    const sumNote = incomplete
+      ? "⚠️ (incomplete — not a balance check)"
+      : Math.abs(sum) < 0.005
+        ? "(balances)"
+        : "⚠️ (does not balance)";
+    lines.push(`**Sum of returned rows**: ${sum.toFixed(2)} ${sumNote}`, "");
     lines.push("| Code | Account | Total |", "|---|---|---|");
     for (const row of rows) {
       lines.push(
         `| ${row.display_nominal_code ?? row.nominal_code ?? "-"} | ${row.name ?? "-"} | ${row.total ?? "-"} |`
       );
     }
-    // A trial balance must balance; surface the check so imbalances are
-    // impossible to miss when reviewing after journal work.
-    const sum = rows.reduce((acc, r) => acc + (Number(r.total) || 0), 0);
-    lines.push("", `**Sum of all rows**: ${sum.toFixed(2)} ${Math.abs(sum) < 0.005 ? "(balances)" : "⚠️ (does not balance)"}`);
-    if (capped) lines.push("", TRIAL_BALANCE_CAP_WARNING);
-    return lines.join("\n");
+    return truncateIfNeeded(lines.join("\n"), { count: rows.length });
   });
 }
 

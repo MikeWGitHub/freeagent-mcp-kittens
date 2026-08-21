@@ -272,6 +272,21 @@ describe("reports", () => {
     expect(result).toContain("1,000-row cap");
     expect(result).toContain("P1");
     expect(result).toContain("P10");
+    expect(result).toContain("incomplete");
+    expect(result).not.toContain("(balances)");
+  });
+
+  it("does not claim the trial balance balances when a single full page arrives without Link headers", async () => {
+    const rows = Array.from({ length: 25 }, (_, i) => ({
+      display_nominal_code: String(i + 1),
+      name: `N${i + 1}`,
+      total: "0.00",
+    }));
+    const { client } = makeClient({ get: () => ({ trial_balance_summary: rows }) });
+    const result = await getTrialBalance(client, { opening_balances: false, response_format: MD });
+    expect(result).toContain("no pagination Link header");
+    expect(result).toContain("incomplete");
+    expect(result).not.toContain("(balances)");
   });
 });
 

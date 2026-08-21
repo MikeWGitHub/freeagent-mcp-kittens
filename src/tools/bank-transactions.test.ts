@@ -1,11 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
-import { gzipSync } from "zlib";
 import { MAX_ATTACHMENT_BYTES } from "../constants.js";
 import { UpdateBankTransactionExplanationInputSchema } from "../schemas/index.js";
-import {
-  buildAttachmentPayload,
-  updateBankTransactionExplanation,
-} from "./bank-transactions.js";
+import { updateBankTransactionExplanation } from "./bank-transactions.js";
 import type { FreeAgentApiClient } from "../services/api-client.js";
 
 const smallPdf = Buffer.from("%PDF-1.4 tiny").toString("base64");
@@ -55,44 +51,6 @@ describe("UpdateBankTransactionExplanationInputSchema attachment", () => {
       },
     });
     expect(result.success).toBe(false);
-  });
-});
-
-describe("buildAttachmentPayload size cap", () => {
-  it("accepts a small uncompressed attachment", () => {
-    const payload = buildAttachmentPayload({
-      data: smallPdf,
-      file_name: "receipt.pdf",
-      content_type: "application/pdf",
-      description: "Taxi",
-    });
-    expect(payload.file_name).toBe("receipt.pdf");
-    expect(payload.content_type).toBe("application/pdf");
-    expect(payload.description).toBe("Taxi");
-    expect(payload.data).toBe(smallPdf);
-  });
-
-  it("rejects an uncompressed attachment over 8MB", () => {
-    const data = Buffer.alloc(MAX_ATTACHMENT_BYTES + 1).toString("base64");
-    expect(() =>
-      buildAttachmentPayload({
-        data,
-        file_name: "huge.pdf",
-        content_type: "application/pdf",
-      })
-    ).toThrow(/8MB/);
-  });
-
-  it("rejects a gzip bomb that expands past 8MB", () => {
-    const data = gzipSync(Buffer.alloc(MAX_ATTACHMENT_BYTES + 1)).toString("base64");
-    expect(() =>
-      buildAttachmentPayload({
-        data,
-        is_gzipped: true,
-        file_name: "bomb.pdf",
-        content_type: "application/pdf",
-      })
-    ).toThrow(/8MB/);
   });
 });
 

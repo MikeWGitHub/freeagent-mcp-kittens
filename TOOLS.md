@@ -1387,7 +1387,7 @@ The following tools were added in the account-coverage expansion. Full parameter
 |---|---|
 | `freeagent_get_profit_and_loss` | P&L summary for a period (must fit within one accounting year, or pass `accounting_period` like `2025/26`). |
 | `freeagent_get_balance_sheet` | Balance sheet as at a date; `opening_balances: true` for the fixed opening position. |
-| `freeagent_get_trial_balance` | Per-category totals with nominal codes; auto-paginates up to 1,000 rows and warns if that cap is hit (never silently truncates). Markdown output verifies the rows sum to zero. The natural sanity check after journal or reconciliation work. |
+| `freeagent_get_trial_balance` | Per-category totals with nominal codes; auto-paginates up to 1,000 rows. Warns if that cap is hit or if a single 25/100-row page arrives with no `Link` header (FreeAgent's public docs do not document TB pagination). Markdown never claims the statement balances when the result may be incomplete. |
 | `freeagent_get_cashflow` | Historic incoming/outgoing totals with monthly breakdown. No projections. |
 
 ### General ledger (read-only)
@@ -1448,7 +1448,7 @@ These are the fork's original headline additions (pre-dating the July 2026 cover
 | Tool | Purpose |
 |---|---|
 | `freeagent_list_journal_sets` / `freeagent_get_journal_set` | List and inspect balanced sets of manual accounting entries, filterable by date range and tag. |
-| `freeagent_create_journal_set` | Create a balanced journal set (debits positive, credits negative, must sum to zero — validated in the handler because schema `.refine()` does not survive `.shape` registration). Requires `confirm: true`. Categories accept names, nominal codes, or URLs. The intended IoM workflow: zero the Corporation Tax charge each year (0% rate). CAUTION: journal sets created with a `tag` become uneditable in the FreeAgent web UI. |
+| `freeagent_create_journal_set` | Create a balanced journal set (debits positive, credits negative, must sum to zero — validated in the handler because schema `.refine()` does not survive `.shape` registration). **Breaking in v1.2.0:** requires `confirm: true`. Categories accept names, nominal codes, or URLs. The intended IoM workflow: zero the Corporation Tax charge each year (0% rate). CAUTION: journal sets created with a `tag` become uneditable in the FreeAgent web UI. |
 | `freeagent_update_journal_set` | Modify, add, or remove (`_destroy`) entries on an existing set. Requires `confirm: true`. The post-update set is balance-checked client-side before the write. |
 | `freeagent_delete_journal_set` | Permanently delete a journal set and all its entries. Requires `confirm: true`; the reply records what was removed. |
 | `freeagent_upload_bank_statement` | Add bank transactions via statement upload. Requires `confirm: true`. FreeAgent silently de-duplicates rows matching an existing transaction's date+amount+description — supply a unique `fitid` or vary the description for deliberate same-day twins. The import is asynchronous, so the tool snapshots the date range beforehand, polls afterwards, and reports exactly which rows imported (paginated, so busy ranges verify correctly). |

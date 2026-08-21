@@ -5,9 +5,8 @@
  * with support for file attachments.
  */
 
-import { gunzipSync } from "zlib";
-import { MAX_ATTACHMENT_BYTES } from "../constants.js";
 import type { FreeAgentApiClient } from "../services/api-client.js";
+import { buildAttachmentPayload } from "../services/attachments.js";
 import type { FreeAgentExpense } from "../types.js";
 import type {
   ListExpensesInput,
@@ -250,35 +249,8 @@ export async function createExpense(
     }
   }
 
-  // Add attachment if provided
   if (params.attachment) {
-    let attachmentData = params.attachment.data;
-
-    // If attachment is gzipped, decompress it before sending to FreeAgent
-    if (params.attachment.is_gzipped) {
-      try {
-        // Decode Base64 to Buffer
-        const compressedBuffer = Buffer.from(attachmentData, 'base64');
-        // Decompress using gunzip. maxOutputLength bounds the decompressed
-        // size: without it a small gzip bomb could exhaust process memory
-        // (audit S-MED-1). FreeAgent's own attachment cap is 5MB.
-        const decompressedBuffer = gunzipSync(compressedBuffer, { maxOutputLength: MAX_ATTACHMENT_BYTES });
-        // Re-encode to Base64
-        attachmentData = decompressedBuffer.toString('base64');
-      } catch (error) {
-        throw new Error(`Failed to decompress gzipped attachment: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      }
-    }
-
-    const attachmentPayload: Record<string, string> = {
-      data: attachmentData,
-      file_name: params.attachment.file_name,
-      content_type: params.attachment.content_type
-    };
-    if (params.attachment.description) {
-      attachmentPayload.description = params.attachment.description;
-    }
-    expensePayload.attachment = attachmentPayload;
+    expensePayload.attachment = buildAttachmentPayload(params.attachment);
   }
 
   const response = await client.post<{ expense: FreeAgentExpense }>("/expenses", { expense: expensePayload });

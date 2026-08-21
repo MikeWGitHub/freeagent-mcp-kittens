@@ -26,7 +26,7 @@ import {
   getCachedFreeAgentAccessToken,
   isStaticBearerConfigured,
   parseStaticScope,
-  staticBearerMatches,
+  resolveMcpAuthMode,
 } from "../src/services/static-bearer.js";
 import type { McpStaticScope } from "../src/services/static-bearer.js";
 
@@ -154,9 +154,16 @@ const bearerAuth = requireBearerAuth({
 });
 
 function mcpAuth(req: McpRequest, res: Response, next: NextFunction): void {
-  const presented = extractBearerToken(req.headers.authorization);
-  if (presented && staticBearerMatches(presented)) {
+  const mode = resolveMcpAuthMode(req.headers.authorization);
+  if (mode === "static") {
     req.mcpAuthMode = "static";
+    console.error(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: "info",
+      component: "mcp-auth",
+      message: "mcp auth accepted",
+      data: { mode: "static" },
+    }));
     next();
     return;
   }
@@ -219,7 +226,6 @@ app.get("/health", (_req: Request, res: Response) => {
     version: SERVER_VERSION,
     oauth_mode: "jwt-stateless",
     static_bearer: staticBearer,
-    ...(staticBearer ? { static_bearer_scope: parseStaticScope(process.env.MCP_STATIC_SCOPE) } : {}),
     freeagent_environment: USE_SANDBOX ? "sandbox" : "production",
   });
 });

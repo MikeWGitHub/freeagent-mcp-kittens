@@ -6,11 +6,11 @@ All notable changes to this fork are documented here. Versions are git tags; see
 
 Backlog: trial balance completeness, explanation attachments on update, invoice reminder setting, journal create confirm, hosted static-bearer auth.
 
-- `freeagent_get_trial_balance` auto-paginates via `fetchAllPages` (10-page / 1,000-row cap) and warns when capped instead of silently returning the first 25 rows.
-- `freeagent_update_bank_transaction_explanation` accepts the same `attachment` block as create (8MB decoded-size limit, gzip `maxOutputLength` guard, same content types).
+- `freeagent_get_trial_balance` auto-paginates via `fetchAllPages` (10-page / 1,000-row cap). Cap and missing-`Link`-header cases warn instead of silently truncating; the sum line never claims "(balances)" on incomplete data. Markdown is truncated at the usual 25k character limit.
+- `freeagent_update_bank_transaction_explanation` accepts the same `attachment` block as create (8MB decoded-size limit, gzip `maxOutputLength` guard, same content types). Expense create shares the same helper.
 - `freeagent_update_invoice` exposes optional `send_reminder_emails` (toggles automatic overdue reminders; does not send immediately; no confirm gate).
-- `freeagent_create_journal_set` requires `confirm: true`, matching update/delete. Handler debit/credit balance check is unchanged.
-- Hosted static bearer auth: `MCP_STATIC_BEARER` + `FREEAGENT_REFRESH_TOKEN` + `MCP_STATIC_SCOPE` (`read` / `read_draft` / `full`). Timing-safe compare, module-scope access-token cache, `read_draft` forces `marked_for_review` on explanation create. OAuth/JWT path unchanged; unset `MCP_STATIC_BEARER` is inert; missing refresh token fails closed.
+- **Breaking:** `freeagent_create_journal_set` now requires `confirm: true`, matching update/delete. Handler debit/credit balance check is unchanged. Callers that omitted `confirm` will be rejected.
+- Hosted static bearer auth: `MCP_STATIC_BEARER` + `FREEAGENT_REFRESH_TOKEN` + `MCP_STATIC_SCOPE` (`read` default / `read_draft` / `full`). Timing-safe compare, module-scope access-token cache (one FreeAgent identity per process, not multi-tenant). `read_draft` is a **write** (`create_bank_transaction_explanation` with `marked_for_review` forced true). OAuth/JWT path unchanged; unset `MCP_STATIC_BEARER` is inert; missing refresh token fails closed. `/health` reports whether static bearer is enabled, not the scope.
 - `api/index.ts` is type-checked via `tsconfig.api.json` (`bun run typecheck`).
 - Removed unused `oauth-proxy.ts` and `freeagent-auth.ts`.
 - README tool catalogue regenerated to 88 tools, matching TOOLS.md.

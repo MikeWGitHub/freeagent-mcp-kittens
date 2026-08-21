@@ -9,6 +9,10 @@
  *
  * If MCP_STATIC_BEARER is unset this module is inert. A set bearer with a
  * missing FREEAGENT_REFRESH_TOKEN fails closed, matching JWT_SECRET on Vercel.
+ *
+ * The module-scope access-token cache is one FreeAgent identity per process
+ * (not multi-tenant). Rotating MCP_STATIC_BEARER or FREEAGENT_REFRESH_TOKEN
+ * is the only revocation.
  */
 
 import crypto from "crypto";
@@ -94,6 +98,23 @@ export function extractBearerToken(authorizationHeader: string | undefined): str
   if (!authorizationHeader) return undefined;
   const match = /^Bearer\s+(\S+)/i.exec(authorizationHeader);
   return match?.[1];
+}
+
+export type McpAuthMode = "static" | "jwt";
+
+/**
+ * Choose the hosted auth branch. A matching MCP_STATIC_BEARER wins; otherwise
+ * the request falls through to the OAuth/JWT verifier. Does not log tokens.
+ */
+export function resolveMcpAuthMode(
+  authorizationHeader: string | undefined,
+  env: NodeJS.ProcessEnv = process.env
+): McpAuthMode {
+  const presented = extractBearerToken(authorizationHeader);
+  if (presented && staticBearerMatches(presented, env.MCP_STATIC_BEARER)) {
+    return "static";
+  }
+  return "jwt";
 }
 
 /** Test seam — clears the module-scope access-token cache. */

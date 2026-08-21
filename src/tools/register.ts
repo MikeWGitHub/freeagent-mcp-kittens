@@ -504,7 +504,8 @@ export const toolDefinitions: ToolDefinition[] = [
   {
     name: "freeagent_create_journal_set",
     title: "Create FreeAgent Journal Set",
-    description: "Create a balanced set of journal entries (debits positive, credits negative, must sum to zero). Categories accept names, nominal codes, or URLs. Requires confirm: true — journals move real account balances. Confirm with the user before calling.",
+    description:
+      "Create a balanced set of journal entries (debits positive, credits negative, must sum to zero). Categories accept names, nominal codes, or URLs. Requires confirm: true — journals move real account balances. Confirm with the user before calling. Breaking in v1.2.0: callers that omitted confirm will now be rejected.",
     inputSchema: CreateJournalSetInputSchema.shape,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     handler: createJournalSet,
@@ -912,9 +913,9 @@ function forceMarkedForReview(tool: ToolDefinition): ToolDefinition {
 
 /**
  * Filter the catalog for hosted static-bearer scopes.
- * - read: list_* / get_* only
- * - read_draft: read plus create_bank_transaction_explanation (marked_for_review forced true)
- * - full: the complete catalog
+ * - read: list_* / get_* only (still includes attachments, reports, ledger — not a data-minimised view)
+ * - read_draft: read plus create_bank_transaction_explanation (a WRITE; marked_for_review forced true)
+ * - full: the complete catalog (writes against the live FreeAgent identity)
  */
 export function toolsForScope(
   scope: McpStaticScope,

@@ -42,7 +42,7 @@ Optional — **static bearer** for clients that cannot complete OAuth (e.g. Grok
 
    - `MCP_STATIC_BEARER`: Shared secret; compared with `crypto.timingSafeEqual` against the presented Bearer token
    - `FREEAGENT_REFRESH_TOKEN`: Long-lived FreeAgent refresh token used to mint access tokens server-side (required if `MCP_STATIC_BEARER` is set; missing it is a startup error)
-   - `MCP_STATIC_SCOPE`: `read` (default; `list_*`/`get_*` only), `read_draft` (read plus `create_bank_transaction_explanation` with `marked_for_review` forced true), or `full` (entire catalog)
+   - `MCP_STATIC_SCOPE`: `read` (default; `list_*`/`get_*` only — still includes reports, ledger, and attachment download URLs), `read_draft` (a **write**: read plus `create_bank_transaction_explanation` with `marked_for_review` forced true), or `full` (entire catalog against the live FreeAgent identity). One shared bearer maps to one company. Prefer `read`. Do not use `full` on production unless that is deliberate.
 
 If `MCP_STATIC_BEARER` is unset the branch is inert and the OAuth/JWT path is unchanged.
 
