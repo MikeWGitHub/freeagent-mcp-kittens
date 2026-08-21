@@ -6,16 +6,16 @@ A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for the
 
 ## Features
 
-- **Broad FreeAgent coverage**: contacts, invoices (incl. transitions and discounts), estimates (incl. transitions), bills, recurring invoices, price list items, expenses, timeslips, projects, tasks, bank accounts, bank transaction explanations, categories, company info, and users
+- **88 FreeAgent tools**: contacts, invoices (incl. transitions, updates, and discounts), credit notes, estimates, bills, recurring invoices, price list items, expenses, timeslips, projects, tasks, bank accounts, bank transaction explanations, journals, accounting reports (P&L / balance sheet / trial balance / cashflow), general ledger, capital assets, statutory returns (read-only), stock, attachments, notes, categories, company info, and users
 - **Intent-bundle tools**: `reconcile_bank_transaction`, `log_expense`, and `invoice_from_timeslips` collapse multi-call sequences into single tool calls and resolve human-friendly hints (names, codes, references) to FreeAgent URLs server-side
 - **Optional tool-search mode** (`FREEAGENT_TOOL_SEARCH=true`): collapses the tool catalog behind two meta-tools (`freeagent_search_tools`, `freeagent_call_tool`) so clients only pay the tool-definition token cost for tools they actually use
 - **MCP elicitation**: `create_invoice` falls back to a form elicitation when `contact` is omitted (on clients that support it)
 - **Two deployment modes**: local (stdio) or cloud (Vercel serverless via Streamable HTTP)
-- **OAuth 2.0**: stateless JWT-based auth for serverless, or direct token for local use
+- **OAuth 2.0 plus optional static bearer**: stateless JWT-based auth for serverless, a shared-secret bearer path for clients that cannot complete OAuth (Grok Bot and similar), or a direct token for local use
 - **Tool annotations**: `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint` on every tool
 - **Zod validation**: strict input schemas with `.describe()` on all fields
 - **Dual response formats**: Markdown (human-readable) or JSON (structured)
-- **Pagination**: proper header parsing with `x-total-count` and `Link` headers
+- **Pagination**: proper header parsing with `x-total-count` and `Link` headers; list helpers cap at 10 pages / 1,000 rows and warn when capped
 - **Rate limit handling**: clear error messages with retry-after guidance
 - **Sandbox support**: test safely against FreeAgent's sandbox environment
 
@@ -57,14 +57,15 @@ See [VERCEL_DEPLOYMENT.md](./VERCEL_DEPLOYMENT.md) for full instructions. Key po
 
 - Uses `StreamableHTTPServerTransport` in stateless mode (no sessions)
 - OAuth 2.0 with PKCE via JWT-encoded tokens (no database needed)
+- Optional **static bearer** path for clients that cannot complete OAuth (`MCP_STATIC_BEARER` + `FREEAGENT_REFRESH_TOKEN`; see Vercel docs)
 - Handles `POST` (tool calls), `GET` (SSE streaming), and `DELETE` (returns 405 - stateless)
 - Set `PRODUCTION_URL` env var for stable OAuth callback URLs
 
-Required env vars: `FREEAGENT_CLIENT_ID`, `FREEAGENT_CLIENT_SECRET`
+Required env vars: `FREEAGENT_CLIENT_ID`, `FREEAGENT_CLIENT_SECRET`, `JWT_SECRET`
 
 ## Tool-Search Mode (optional)
 
-By default the server registers every catalog tool directly, which makes all ~50 tool definitions part of the MCP client's `tools/list` response. For clients with many connected MCP servers — where tool-definition tokens add up quickly — set:
+By default the server registers every catalog tool directly, which makes all 88 tool definitions part of the MCP client's `tools/list` response. For clients with many connected MCP servers — where tool-definition tokens add up quickly — set:
 
 ```bash
 export FREEAGENT_TOOL_SEARCH=true
@@ -81,7 +82,7 @@ The full catalog is still reachable — it's just loaded on demand. This mirrors
 
 ## Available Tools
 
-See [TOOLS.md](./TOOLS.md) for per-tool parameters and examples. Summary:
+88 catalog tools. See [TOOLS.md](./TOOLS.md) for per-tool parameters and examples. Summary:
 
 ### Contacts
 | Tool | Description | Read-only |
@@ -96,8 +97,15 @@ See [TOOLS.md](./TOOLS.md) for per-tool parameters and examples. Summary:
 | `freeagent_list_invoices` | List invoices with status/contact/project filters | Yes |
 | `freeagent_get_invoice` | Get invoice details (renders computed discount amount) | Yes |
 | `freeagent_create_invoice` | Create a draft invoice (supports `discount_percent`; elicits `contact` if omitted) | No |
+| `freeagent_update_invoice` | Update dates, references, comments, discount, contact, `send_reminder_emails`, line items | No |
 | `freeagent_transition_invoice` | mark_as_sent / mark_as_cancelled / mark_as_draft / mark_as_scheduled / convert_to_credit_note | No |
 | `freeagent_invoice_from_timeslips` | **Intent bundle**: draft an invoice from a contact's unbilled timeslips | No |
+
+### Credit notes
+| Tool | Description | Read-only |
+|------|-------------|-----------|
+| `freeagent_list_credit_notes` | List credit notes with status/contact/project filters | Yes |
+| `freeagent_get_credit_note` | Get a credit note with line items, refund state, and PO reference | Yes |
 
 ### Estimates
 | Tool | Description | Read-only |
@@ -107,25 +115,19 @@ See [TOOLS.md](./TOOLS.md) for per-tool parameters and examples. Summary:
 | `freeagent_create_estimate` | Draft an estimate (supports `discount_percent`) | No |
 | `freeagent_transition_estimate` | mark_as_sent / mark_as_approved / mark_as_rejected / mark_as_cancelled / mark_as_draft / convert_to_invoice | No |
 
-### Bills
-| Tool | Description | Read-only |
-|------|-------------|-----------|
-| `freeagent_list_bills` | List supplier bills with filters | Yes |
-| `freeagent_get_bill` | Get bill details | Yes |
-| `freeagent_create_bill` | Record a supplier bill | No |
-
-### Recurring Invoices
+### Recurring invoices
 | Tool | Description | Read-only |
 |------|-------------|-----------|
 | `freeagent_list_recurring_invoices` | List recurring invoice templates | Yes |
 | `freeagent_get_recurring_invoice` | Get template details | Yes |
 
-### Price List Items
+### Price list items
 | Tool | Description | Read-only |
 |------|-------------|-----------|
 | `freeagent_list_price_list_items` | List catalog items | Yes |
 | `freeagent_get_price_list_item` | Get catalog item details | Yes |
 | `freeagent_create_price_list_item` | Add a catalog item | No |
+| `freeagent_update_price_list_item` | Update a catalog item | No |
 
 ### Expenses
 | Tool | Description | Read-only |
@@ -136,6 +138,14 @@ See [TOOLS.md](./TOOLS.md) for per-tool parameters and examples. Summary:
 | `freeagent_update_expense` | Update an existing expense | No |
 | `freeagent_log_expense` | **Intent bundle**: log a regular expense with a positive `amount` + `kind` enum | No |
 
+### Bills
+| Tool | Description | Read-only |
+|------|-------------|-----------|
+| `freeagent_list_bills` | List supplier bills with filters | Yes |
+| `freeagent_get_bill` | Get bill details | Yes |
+| `freeagent_create_bill` | Record a supplier bill | No |
+| `freeagent_update_bill` | Update dates, reference, comments, contact, line items | No |
+
 ### Timeslips
 | Tool | Description | Read-only |
 |------|-------------|-----------|
@@ -144,7 +154,7 @@ See [TOOLS.md](./TOOLS.md) for per-tool parameters and examples. Summary:
 | `freeagent_create_timeslip` | Create a time entry | No |
 | `freeagent_update_timeslip` | Update a timeslip (incl. `billed_on_invoice`) | No |
 
-### Bank Accounts & Transactions
+### Bank accounts & transactions
 | Tool | Description | Read-only |
 |------|-------------|-----------|
 | `freeagent_list_bank_accounts` | List all bank accounts | Yes |
@@ -153,27 +163,86 @@ See [TOOLS.md](./TOOLS.md) for per-tool parameters and examples. Summary:
 | `freeagent_get_bank_transaction` | Get bank transaction details | Yes |
 | `freeagent_list_bank_transaction_explanations` | List transaction explanations | Yes |
 | `freeagent_get_bank_transaction_explanation` | Get explanation details | Yes |
-| `freeagent_create_bank_transaction_explanation` | Explain/categorize a bank transaction | No |
-| `freeagent_update_bank_transaction_explanation` | Update a transaction explanation | No |
+| `freeagent_create_bank_transaction_explanation` | Explain/categorize a bank transaction (optional attachment) | No |
+| `freeagent_update_bank_transaction_explanation` | Update an explanation (optional attachment, 8MB cap) | No |
 | `freeagent_reconcile_bank_transaction` | **Intent bundle**: explain a transaction with a category name / invoice ref / bill ref | No |
+| `freeagent_upload_bank_statement` | Upload statement rows (`confirm: true`; verifies import) | No |
+| `freeagent_delete_bank_transaction_explanation` | Delete an explanation only — never the bank transaction (`confirm: true`) | No |
 
-### Projects & Tasks
+### Projects & tasks
 | Tool | Description | Read-only |
 |------|-------------|-----------|
 | `freeagent_list_projects` | List projects with status/contact filters | Yes |
 | `freeagent_get_project` | Get project details | Yes |
 | `freeagent_create_project` | Create a new project | No |
+| `freeagent_update_project` | Update name, status, budget, billing, dates, PO reference | No |
 | `freeagent_list_tasks` | List tasks with project/status filters | Yes |
 | `freeagent_get_task` | Get task details | Yes |
 | `freeagent_create_task` | Create a task within a project | No |
+| `freeagent_update_task` | Update name, status, billing | No |
 
-### Categories, Company & Users
+### Accounting reports
+| Tool | Description | Read-only |
+|------|-------------|-----------|
+| `freeagent_get_profit_and_loss` | P&L summary for a period (one accounting year) | Yes |
+| `freeagent_get_balance_sheet` | Balance sheet as at a date (or opening balances) | Yes |
+| `freeagent_get_trial_balance` | Per-category totals; auto-paginated (warns at the 1,000-row cap) | Yes |
+| `freeagent_get_cashflow` | Historic incoming/outgoing cash with monthly breakdown | Yes |
+
+### General ledger
+| Tool | Description | Read-only |
+|------|-------------|-----------|
+| `freeagent_list_ledger_transactions` | Double-entry postings (max 12 months, one accounting year) | Yes |
+| `freeagent_get_ledger_transaction` | One posting including its source document URL | Yes |
+
+### Capital assets
+| Tool | Description | Read-only |
+|------|-------------|-----------|
+| `freeagent_list_capital_assets` | Capital asset register | Yes |
+| `freeagent_get_capital_asset` | One asset with depreciation profile and history | Yes |
+| `freeagent_list_capital_asset_types` | System and custom capital asset types | Yes |
+
+### Statutory returns (read-only; no filing writes)
+| Tool | Description | Read-only |
+|------|-------------|-----------|
+| `freeagent_list_final_accounts_reports` | Final Accounts reports per period | Yes |
+| `freeagent_get_final_accounts_report` | One Final Accounts report by period end date | Yes |
+| `freeagent_list_corporation_tax_returns` | CT returns with amount due | Yes |
+| `freeagent_get_corporation_tax_return` | One CT return by period end date | Yes |
+| `freeagent_list_vat_returns` | VAT returns with filing/payment status | Yes |
+| `freeagent_get_vat_return` | One VAT return with box-by-box breakdown | Yes |
+| `freeagent_list_sales_tax_periods` | Sales tax registration periods | Yes |
+
+### Stock, attachments, notes
+| Tool | Description | Read-only |
+|------|-------------|-----------|
+| `freeagent_list_stock_items` | List stock items (API is read-only) | Yes |
+| `freeagent_get_stock_item` | Get a stock item | Yes |
+| `freeagent_get_attachment` | Attachment metadata and time-limited download URLs | Yes |
+| `freeagent_delete_attachment` | Permanently delete an attached file (`confirm: true`) | No |
+| `freeagent_list_notes` | List notes on a contact or project | Yes |
+| `freeagent_create_note` | Add a note to a contact or project | No |
+| `freeagent_update_note` | Replace note content | No |
+| `freeagent_delete_note` | Permanently delete a note (`confirm: true`) | No |
+
+### Journal sets
+| Tool | Description | Read-only |
+|------|-------------|-----------|
+| `freeagent_list_journal_sets` | List journal sets by date range and tag | Yes |
+| `freeagent_get_journal_set` | Get a journal set with its entries | Yes |
+| `freeagent_create_journal_set` | Create a balanced journal set (`confirm: true`) | No |
+| `freeagent_update_journal_set` | Update a journal set (`confirm: true`) | No |
+| `freeagent_delete_journal_set` | Permanently delete a journal set (`confirm: true`) | No |
+
+### Categories, company & users
 | Tool | Description | Read-only |
 |------|-------------|-----------|
 | `freeagent_list_categories` | List accounting categories | Yes |
 | `freeagent_get_category` | Get category by nominal code | Yes |
 | `freeagent_get_company` | Get company information | Yes |
 | `freeagent_list_users` | List all users | Yes |
+| `freeagent_get_user` | Get a user by ID, URL, or `me` | Yes |
+| `freeagent_list_email_addresses` | List verified sender email addresses | Yes |
 
 ## Development
 
@@ -193,6 +262,7 @@ bun install
 | Command | Description |
 |---------|-------------|
 | `bun run build` | Compile TypeScript |
+| `bun run typecheck` | Type-check `src/` and `api/` (no emit) |
 | `bun run dev` | Watch mode (auto-recompile) |
 | `bun run start` | Run the compiled server |
 | `bun run lint` | Run ESLint |
@@ -219,7 +289,7 @@ freeagent-mcp-server/
 │   │   ├── formatter.test.ts          # Formatter tests
 │   │   ├── resolvers.ts               # Shared resolvers (category / user / contact / bill hints → URLs)
 │   │   ├── oauth-jwt.ts               # JWT-based OAuth provider (Vercel)
-│   │   └── freeagent-auth.ts          # Token validation
+│   │   └── static-bearer.ts           # Shared-secret bearer auth + refresh-token cache (Vercel)
 │   └── tools/
 │       ├── register.ts                # Shared tool definitions, registration, ToolContext (elicitation)
 │       ├── contacts.ts                # Contact CRUD
@@ -244,12 +314,13 @@ freeagent-mcp-server/
 │   └── index.ts              # Vercel serverless entry point
 ├── .github/
 │   └── workflows/
-│       └── ci.yml            # GitHub Actions CI (lint, test, build)
+│       └── ci.yml            # GitHub Actions CI (lint, test, typecheck, build)
 ├── eslint.config.js          # ESLint flat config
 ├── vitest.config.ts          # Vitest configuration
 ├── vercel.json               # Vercel deployment config
 ├── package.json
-└── tsconfig.json
+├── tsconfig.json
+└── tsconfig.api.json         # Type-check src/ + api/ (no emit)
 ```
 
 ### CI
@@ -257,6 +328,7 @@ freeagent-mcp-server/
 GitHub Actions runs on every push to `master` and on pull requests:
 - **Lint**: ESLint with TypeScript rules
 - **Test**: Vitest unit tests (no external API calls)
+- **Typecheck**: `tsc --noEmit -p tsconfig.api.json` (includes the Vercel entry point)
 - **Build**: TypeScript compilation check
 
 ## Rate Limiting
@@ -283,10 +355,12 @@ All tool handlers return structured errors via `{ isError: true, content: [...] 
 ## Security
 
 - Access tokens are never logged or committed
-- JWT tokens use HS256 signing with configurable secret
+- JWT tokens use HS256 signing with configurable secret (`JWT_SECRET` fail-closed on Vercel)
+- Optional static bearer is compared with `crypto.timingSafeEqual`; missing `FREEAGENT_REFRESH_TOKEN` fails closed
 - PKCE is used for the OAuth authorization flow
 - Strict Zod schemas reject unexpected input fields
 - Bearer auth middleware protects all MCP endpoints
+- Outbound FreeAgent calls are host-allowlisted (SSRF guard)
 
 ## License
 

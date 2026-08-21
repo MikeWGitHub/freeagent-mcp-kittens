@@ -35,7 +35,16 @@ See [OAUTH_SETUP.md](./OAUTH_SETUP.md) for complete OAuth configuration instruct
 3. Add the following variables:
    - `FREEAGENT_CLIENT_ID`: Your FreeAgent OAuth Client ID
    - `FREEAGENT_CLIENT_SECRET`: Your FreeAgent OAuth Client Secret
+   - `JWT_SECRET`: HMAC secret for MCP JWTs (required on Vercel; generate with `openssl rand -hex 32`)
    - `FREEAGENT_USE_SANDBOX`: Set to `true` for sandbox, `false` for production
+
+Optional — **static bearer** for clients that cannot complete OAuth (e.g. Grok Bot):
+
+   - `MCP_STATIC_BEARER`: Shared secret; compared with `crypto.timingSafeEqual` against the presented Bearer token
+   - `FREEAGENT_REFRESH_TOKEN`: Long-lived FreeAgent refresh token used to mint access tokens server-side (required if `MCP_STATIC_BEARER` is set; missing it is a startup error)
+   - `MCP_STATIC_SCOPE`: `read` (default; `list_*`/`get_*` only), `read_draft` (read plus `create_bank_transaction_explanation` with `marked_for_review` forced true), or `full` (entire catalog)
+
+If `MCP_STATIC_BEARER` is unset the branch is inert and the OAuth/JWT path is unchanged.
 
 #### Via Vercel CLI
 
@@ -45,7 +54,7 @@ vercel env add FREEAGENT_CLIENT_SECRET
 vercel env add FREEAGENT_USE_SANDBOX
 ```
 
-**Note**: The old `FREEAGENT_ACCESS_TOKEN` approach is no longer supported for web deployments. OAuth provides better security and per-user isolation.
+**Note**: Personal access tokens (`FREEAGENT_ACCESS_TOKEN`) are for the stdio server only. Hosted deployments use OAuth (per-user JWTs) and/or the optional static-bearer path above.
 
 ### 4. Deploy to Vercel
 

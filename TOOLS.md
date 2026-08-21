@@ -854,7 +854,7 @@ Updates an existing bank transaction explanation. Only provide the fields you wa
 **Parameters:**
 - `bank_transaction_explanation_id` (string, required): The FreeAgent explanation ID or full URL
 
-All other parameters from `freeagent_create_bank_transaction_explanation` are accepted as optional overrides (e.g., `dated_on`, `description`, `gross_value`, `category`, `paid_invoice`, `paid_bill`, `sales_tax_rate`, `transfer_bank_account`).
+All other parameters from `freeagent_create_bank_transaction_explanation` are accepted as optional overrides (e.g., `dated_on`, `description`, `gross_value`, `category`, `paid_invoice`, `paid_bill`, `sales_tax_rate`, `transfer_bank_account`, `attachment`). `attachment` uses the same 8MB decoded-size limit, gzip `maxOutputLength` guard, and content types (`application/pdf`, `image/png`, `image/jpeg`, `image/gif`) as create.
 
 **Example usage:**
 ```
@@ -1387,7 +1387,7 @@ The following tools were added in the account-coverage expansion. Full parameter
 |---|---|
 | `freeagent_get_profit_and_loss` | P&L summary for a period (must fit within one accounting year, or pass `accounting_period` like `2025/26`). |
 | `freeagent_get_balance_sheet` | Balance sheet as at a date; `opening_balances: true` for the fixed opening position. |
-| `freeagent_get_trial_balance` | Per-category totals with nominal codes; markdown output verifies the rows sum to zero. The natural sanity check after journal or reconciliation work. |
+| `freeagent_get_trial_balance` | Per-category totals with nominal codes; auto-paginates up to 1,000 rows and warns if that cap is hit (never silently truncates). Markdown output verifies the rows sum to zero. The natural sanity check after journal or reconciliation work. |
 | `freeagent_get_cashflow` | Historic incoming/outgoing totals with monthly breakdown. No projections. |
 
 ### General ledger (read-only)
@@ -1431,7 +1431,7 @@ The API's `mark_as_filed` / `mark_as_paid` transitions are intentionally NOT exp
 
 | Tool | Purpose |
 |---|---|
-| `freeagent_update_invoice` | Dates, references, comments, discount, contact, line items (add without `id`; modify with `id`; remove with `id` + `_destroy: 1`). Status changes still go through `freeagent_transition_invoice`. |
+| `freeagent_update_invoice` | Dates, references, comments, discount, contact, `send_reminder_emails` (toggles automatic overdue reminder emails on the live invoice; does not send immediately), line items (add without `id`; modify with `id`; remove with `id` + `_destroy: 1`). Status changes still go through `freeagent_transition_invoice`. |
 | `freeagent_update_bill` | Same pattern for supplier bills. |
 | `freeagent_update_project` | Name, status, budget, billing, dates, PO reference. |
 | `freeagent_update_task` | Name, status, billing. |
@@ -1448,7 +1448,7 @@ These are the fork's original headline additions (pre-dating the July 2026 cover
 | Tool | Purpose |
 |---|---|
 | `freeagent_list_journal_sets` / `freeagent_get_journal_set` | List and inspect balanced sets of manual accounting entries, filterable by date range and tag. |
-| `freeagent_create_journal_set` | Create a balanced journal set (debits positive, credits negative, must sum to zero — validated client-side before POST). Categories accept names, nominal codes, or URLs. The intended IoM workflow: zero the Corporation Tax charge each year (0% rate). CAUTION: journal sets created with a `tag` become uneditable in the FreeAgent web UI. Confirm with the user before calling. |
+| `freeagent_create_journal_set` | Create a balanced journal set (debits positive, credits negative, must sum to zero — validated in the handler because schema `.refine()` does not survive `.shape` registration). Requires `confirm: true`. Categories accept names, nominal codes, or URLs. The intended IoM workflow: zero the Corporation Tax charge each year (0% rate). CAUTION: journal sets created with a `tag` become uneditable in the FreeAgent web UI. |
 | `freeagent_update_journal_set` | Modify, add, or remove (`_destroy`) entries on an existing set. Requires `confirm: true`. The post-update set is balance-checked client-side before the write. |
 | `freeagent_delete_journal_set` | Permanently delete a journal set and all its entries. Requires `confirm: true`; the reply records what was removed. |
 | `freeagent_upload_bank_statement` | Add bank transactions via statement upload. Requires `confirm: true`. FreeAgent silently de-duplicates rows matching an existing transaction's date+amount+description — supply a unique `fitid` or vary the description for deliberate same-day twins. The import is asynchronous, so the tool snapshots the date range beforehand, polls afterwards, and reports exactly which rows imported (paginated, so busy ranges verify correctly). |

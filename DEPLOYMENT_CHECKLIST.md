@@ -16,7 +16,9 @@ Set these in Vercel Dashboard → Settings → Environment Variables:
 
 - [ ] `FREEAGENT_CLIENT_ID` = Your OAuth Client ID
 - [ ] `FREEAGENT_CLIENT_SECRET` = Your OAuth Client Secret
+- [ ] `JWT_SECRET` = HMAC secret for MCP JWTs (`openssl rand -hex 32`)
 - [ ] `FREEAGENT_USE_SANDBOX` = `true` (for testing) or `false` (for production)
+- [ ] (optional static bearer) `MCP_STATIC_BEARER`, `FREEAGENT_REFRESH_TOKEN`, `MCP_STATIC_SCOPE` (`read` | `read_draft` | `full`)
 
 ### 3. Code Ready
 - [ ] Dependencies installed: `bun install`
@@ -39,8 +41,9 @@ Set these in Vercel Dashboard → Settings → Environment Variables:
    {
      "status": "ok",
      "service": "freeagent-mcp-server",
-     "version": "1.1.2",
+     "version": "1.2.0",
      "oauth_mode": "jwt-stateless",
+     "static_bearer": false,
      "freeagent_environment": "sandbox"
    }
    ```

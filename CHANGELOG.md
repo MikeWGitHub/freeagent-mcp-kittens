@@ -2,6 +2,20 @@
 
 All notable changes to this fork are documented here. Versions are git tags; see GitHub Releases for full notes.
 
+## [1.2.0] - 2026-08-21
+
+Backlog: trial balance completeness, explanation attachments on update, invoice reminder setting, journal create confirm, hosted static-bearer auth.
+
+- `freeagent_get_trial_balance` auto-paginates via `fetchAllPages` (10-page / 1,000-row cap) and warns when capped instead of silently returning the first 25 rows.
+- `freeagent_update_bank_transaction_explanation` accepts the same `attachment` block as create (8MB decoded-size limit, gzip `maxOutputLength` guard, same content types).
+- `freeagent_update_invoice` exposes optional `send_reminder_emails` (toggles automatic overdue reminders; does not send immediately; no confirm gate).
+- `freeagent_create_journal_set` requires `confirm: true`, matching update/delete. Handler debit/credit balance check is unchanged.
+- Hosted static bearer auth: `MCP_STATIC_BEARER` + `FREEAGENT_REFRESH_TOKEN` + `MCP_STATIC_SCOPE` (`read` / `read_draft` / `full`). Timing-safe compare, module-scope access-token cache, `read_draft` forces `marked_for_review` on explanation create. OAuth/JWT path unchanged; unset `MCP_STATIC_BEARER` is inert; missing refresh token fails closed.
+- `api/index.ts` is type-checked via `tsconfig.api.json` (`bun run typecheck`).
+- Removed unused `oauth-proxy.ts` and `freeagent-auth.ts`.
+- README tool catalogue regenerated to 88 tools, matching TOOLS.md.
+- Version identity is 1.2.0 in `package.json`, `SERVER_VERSION`, CHANGELOG, and `/health`.
+
 ## [1.1.2] - 2026-07-27
 
 Residual fixes from the second static audit pass (v1.1.1 review).
