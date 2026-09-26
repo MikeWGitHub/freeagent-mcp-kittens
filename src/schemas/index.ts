@@ -32,6 +32,28 @@ export const SalesTaxRateSchema = z.string()
 
 export const OptionalSalesTaxRateSchema = SalesTaxRateSchema.optional().describe(SALES_TAX_RATE_DESCRIPTION);
 
+// Percentage fields other than VAT (e.g. discount_percent) follow the same
+// FreeAgent convention: "20" means 20%. Guard them the same way.
+export const DISCOUNT_PERCENT_DESCRIPTION =
+  "Discount as a PERCENTAGE string: '20' for 20% off, '12.5' for 12.5%. " +
+  "Do NOT send a decimal fraction: '0.20' would be applied as 0.2% and is rejected.";
+
+export const OptionalDiscountPercentSchema = z.string()
+  .trim()
+  .regex(/^\d{1,3}(\.\d+)?$/, "Discount must be a non-negative percentage such as '20'.")
+  .refine((v) => {
+    const n = Number(v);
+    return !(n > 0 && n < 1);
+  }, {
+    message:
+      "Discount looks like a decimal fraction. FreeAgent expects a percentage: use '20' for 20% off.",
+  })
+  .refine((v) => Number(v) <= 100, {
+    message: "Discount is a percentage and cannot exceed 100.",
+  })
+  .optional()
+  .describe(DISCOUNT_PERCENT_DESCRIPTION);
+
 // Base pagination schema
 export const PaginationSchema = z.object({
   page: z.number()
@@ -146,14 +168,16 @@ export const CreateInvoiceInputSchema = z.object({
     .describe("Currency code (e.g., GBP, USD, EUR)"),
   comments: z.string().optional().describe("Comments for the invoice"),
   payment_terms_in_days: z.number().int().optional().describe("Payment terms in days"),
-  discount_percent: z.string()
-    .optional()
-    .describe("Discount to apply, as a decimal string (e.g., '20' for 20%)."),
+  discount_percent: OptionalDiscountPercentSchema,
   invoice_items: z.array(z.object({
     item_type: z.string().describe("Item type (e.g., 'Hours', 'Days', 'Products')"),
     description: z.string().describe("Item description"),
-    price: z.string().describe("Price per unit"),
-    quantity: z.string().describe("Quantity")
+    price: z.string().describe("Unit price NET of VAT (decimal string). VAT is added on top using sales_tax_rate, or the account default if omitted: price '100.00' at 20% invoices £120 gross."),
+    quantity: z.string().describe("Quantity"),
+    sales_tax_rate: OptionalSalesTaxRateSchema,
+    sales_tax_status: z.enum(["TAXABLE", "EXEMPT", "OUT_OF_SCOPE"]).optional()
+      .describe("VAT treatment of the line. Omit for normal taxable lines."),
+    category: z.string().optional().describe("Income category URL or nominal code for the line (defaults to Sales).")
   })).min(1).describe("Array of invoice line items")
 }).strict();
 
@@ -467,6 +491,9 @@ export const ListCategoriesInputSchema = z.object({
   view: z.enum(["all", "standard", "custom"])
     .optional()
     .describe("Filter categories by type (all, standard system categories, or custom user-created)"),
+  sub_accounts: z.boolean()
+    .optional()
+    .describe("Include sub-accounts (e.g. 602-1 Computer Equipment, 602-3 Motor Vehicles, 750-x bank accounts, 902-x users) in place of their parent categories. Use this to find capital asset sub-codes."),
   response_format: ResponseFormatSchema
 }).strict();
 
@@ -618,7 +645,7 @@ export const CreateBankTransactionExplanationInputSchema = z.object({
     .optional()
     .describe("Description of the transaction"),
   gross_value: z.string()
-    .describe("Transaction amount (decimal string, negative for debits)"),
+    .describe("Amount as a decimal string: NEGATIVE for money out of the bank (e.g. '-47.99' for a £47.99 payment), positive for money in. Note this is the opposite of the journal convention."),
   category: z.string()
     .optional()
     .describe("Category URL or ID for the transaction"),
@@ -648,7 +675,7 @@ export const CreateBankTransactionExplanationInputSchema = z.object({
   sales_tax_rate: OptionalSalesTaxRateSchema,
   sales_tax_value: z.string()
     .optional()
-    .describe("Sales tax amount"),
+    .describe("VAT amount with the SAME sign as gross_value (e.g. '-8.00' on a '-48.00' payment). Usually omit it and let FreeAgent calculate VAT from sales_tax_rate."),
   sales_tax_status: z.enum(["TAXABLE", "EXEMPT", "OUT_OF_SCOPE"])
     .optional()
     .describe("VAT treatment of the amount. TAXABLE (default) applies the rate; EXEMPT = VAT-exempt supply; OUT_OF_SCOPE = outside the scope of VAT entirely (e.g. Patreon and Google AdSense income). Distinct from a 0% rate."),
@@ -679,7 +706,7 @@ export const UpdateBankTransactionExplanationInputSchema = z.object({
     .describe("Description of the transaction"),
   gross_value: z.string()
     .optional()
-    .describe("Transaction amount (decimal string, negative for debits)"),
+    .describe("Amount as a decimal string: NEGATIVE for money out of the bank (e.g. '-47.99' for a £47.99 payment), positive for money in. Note this is the opposite of the journal convention."),
   category: z.string()
     .optional()
     .describe("Category URL or ID for the transaction"),
@@ -709,7 +736,7 @@ export const UpdateBankTransactionExplanationInputSchema = z.object({
   sales_tax_rate: OptionalSalesTaxRateSchema,
   sales_tax_value: z.string()
     .optional()
-    .describe("Sales tax amount"),
+    .describe("VAT amount with the SAME sign as gross_value (e.g. '-8.00' on a '-48.00' payment). Usually omit it and let FreeAgent calculate VAT from sales_tax_rate."),
   sales_tax_status: z.enum(["TAXABLE", "EXEMPT", "OUT_OF_SCOPE"])
     .optional()
     .describe("VAT treatment of the amount. TAXABLE (default) applies the rate; EXEMPT = VAT-exempt supply; OUT_OF_SCOPE = outside the scope of VAT entirely (e.g. Patreon and Google AdSense income). Distinct from a 0% rate."),
@@ -804,12 +831,18 @@ export const CreateBillInputSchema = z.object({
     .optional()
     .describe("EC status. Defaults to 'UK/Non-EC'."),
   bill_items: z.array(z.object({
-    category: z.string().describe("Category URL or nominal code for this line."),
-    description: z.string().optional().describe("Line description."),
-    price: z.string().describe("Unit price as decimal string."),
-    quantity: z.string().describe("Quantity as decimal string."),
-    sales_tax_rate: OptionalSalesTaxRateSchema
-  })).min(1).describe("Array of bill line items.")
+    category: z.string().describe("Category URL or nominal code for this line. Capital asset purchases use the sub-coded category, e.g. '602-1' (description then required)."),
+    description: z.string().optional().describe("Line description. Required by FreeAgent when the category is a capital asset type."),
+    total_value: z.string().optional()
+      .describe("Line total INCLUDING VAT, as a positive decimal string (e.g. '120.00'). Provide this or total_value_ex_tax."),
+    total_value_ex_tax: z.string().optional()
+      .describe("Line total EXCLUDING VAT, as a positive decimal string (e.g. '100.00'). Alternative to total_value."),
+    quantity: z.string().optional().describe("Quantity as decimal string (informational; FreeAgent uses the line total)."),
+    unit: z.string().optional().describe("Unit label, e.g. 'Hours'."),
+    sales_tax_rate: OptionalSalesTaxRateSchema,
+    sales_tax_status: z.enum(["TAXABLE", "EXEMPT", "OUT_OF_SCOPE"]).optional()
+      .describe("VAT treatment of the line.")
+  }).strict()).min(1).max(40).describe("Array of bill line items (FreeAgent allows up to 40). There is no price field: use total_value or total_value_ex_tax.")
 }).strict();
 
 // Estimate schemas
@@ -853,9 +886,7 @@ export const CreateEstimateInputSchema = z.object({
   comments: z.string().optional().describe("Comments shown on the estimate."),
   terms_and_conditions: z.string().optional().describe("Terms & conditions text."),
   payment_terms_in_days: z.number().int().optional().describe("Payment terms in days."),
-  discount_percent: z.string()
-    .optional()
-    .describe("Discount to apply, as a decimal string (e.g., '20' for 20%)."),
+  discount_percent: OptionalDiscountPercentSchema,
   ec_status: z.enum(["UK/Non-EC", "EC Goods", "EC Services", "Reverse Charge"])
     .optional()
     .describe("EC status. Defaults to 'UK/Non-EC'."),
@@ -976,9 +1007,7 @@ export const InvoiceFromTimeslipsInputSchema = z.object({
     .int()
     .optional()
     .describe("Payment terms in days."),
-  discount_percent: z.string()
-    .optional()
-    .describe("Discount to apply to the drafted invoice, as a decimal string (e.g., '20' for 20%)."),
+  discount_percent: OptionalDiscountPercentSchema,
   link_timeslips: z.boolean()
     .default(false)
     .describe("If true, attempt to link the source timeslips to the new invoice by setting `billed_on_invoice` on each. FreeAgent sometimes rejects these writes — any failures are surfaced in the response.")
@@ -1118,13 +1147,19 @@ export type CallToolInput = z.infer<typeof CallToolInputSchema>;
 export const JournalEntryInputSchema = z.object({
   category: z.string()
     .min(1)
-    .describe("Accounting category for the entry. Accepts a category name (e.g. 'Corporation Tax'), nominal code (e.g. '625'), or full URL."),
+    .describe("Accounting category for the entry. Accepts a category name (e.g. 'Corporation Tax'), nominal code (e.g. '625'), sub-coded nominal code for capital assets (e.g. '602-3' = Motor Vehicle Purchase), or full URL."),
   debit_value: z.number()
     .describe("Entry value. Positive = debit, negative = credit. All entries in a set must sum to zero."),
   description: z.string().optional()
     .describe("Free-text description for this entry."),
   user: z.string().optional()
-    .describe("Required for user categories (salary, dividends, etc). Accepts a user name, email, numeric ID, or full URL.")
+    .describe("Required for user categories (salary, dividends, etc). Accepts a user name, email, numeric ID, or full URL."),
+  capital_asset_type: z.string().optional()
+    .describe("Required by FreeAgent for capital asset categories 601-607. Accepts a capital asset type URL, numeric ID or name (e.g. 'Motor Vehicles'). Not needed if category is given with its sub-code (e.g. '602-3'), which is resolved automatically."),
+  stock_item: z.string().optional()
+    .describe("Stock item URL or ID. Required by FreeAgent for stock categories."),
+  stock_altering_quantity: z.number().int().optional()
+    .describe("Quantity change for stock_item. Required by FreeAgent for stock categories.")
 }).strict();
 
 export const ListJournalSetsInputSchema = z.object({
@@ -1168,7 +1203,13 @@ export const UpdateJournalEntrySchema = z.object({
     .describe("Entry value. Positive = debit, negative = credit."),
   description: z.string().optional(),
   user: z.string().optional()
-    .describe("User name, email, ID, or URL for user categories.")
+    .describe("User name, email, ID, or URL for user categories."),
+  capital_asset_type: z.string().optional()
+    .describe("Required by FreeAgent for capital asset categories 601-607. Accepts a capital asset type URL, numeric ID or name (e.g. 'Motor Vehicles'). Not needed if category is given with its sub-code (e.g. '602-3'), which is resolved automatically."),
+  stock_item: z.string().optional()
+    .describe("Stock item URL or ID. Required by FreeAgent for stock categories."),
+  stock_altering_quantity: z.number().int().optional()
+    .describe("Quantity change for stock_item. Required by FreeAgent for stock categories.")
 }).strict();
 
 export const UpdateJournalSetInputSchema = z.object({
@@ -1484,7 +1525,7 @@ export const UpdateInvoiceInputSchema = z.object({
   reference: z.string().optional().describe("New invoice reference"),
   po_reference: z.string().optional().describe("New PO reference"),
   comments: z.string().optional(),
-  discount_percent: z.string().optional(),
+  discount_percent: OptionalDiscountPercentSchema,
   send_reminder_emails: z.boolean().optional()
     .describe("Toggle FreeAgent's automatic overdue-invoice reminder emails for this invoice. true enables reminders; false disables them. This changes outbound email behaviour on the live account (it does not send an email immediately)."),
   invoice_items: z.array(UpdateInvoiceItemSchema).optional()

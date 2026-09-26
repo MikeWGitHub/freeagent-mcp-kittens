@@ -170,7 +170,7 @@ Expected response:
 {
   "status": "ok",
   "service": "freeagent-mcp-server",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "oauth_mode": "jwt-stateless",
   "static_bearer": false,
   "freeagent_environment": "sandbox"

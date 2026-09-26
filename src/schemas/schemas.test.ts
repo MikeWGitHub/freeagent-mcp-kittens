@@ -183,12 +183,12 @@ describe("UpdateInvoiceInputSchema", () => {
 });
 
 describe("version identity", () => {
-  it("SERVER_VERSION matches package.json at 1.2.2", () => {
+  it("SERVER_VERSION matches package.json at 1.2.3", () => {
     const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as {
       version: string;
     };
     expect(SERVER_VERSION).toBe(pkg.version);
-    expect(SERVER_VERSION).toBe("1.2.2");
+    expect(SERVER_VERSION).toBe("1.2.3");
   });
 });
 

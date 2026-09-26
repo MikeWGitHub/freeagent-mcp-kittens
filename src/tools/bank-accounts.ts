@@ -157,7 +157,7 @@ export async function listBankTransactions(
     queryParams
   );
   const transactions = response.data.bank_transactions || [];
-  const pagination = client.parsePaginationHeaders(response.headers);
+  const pagination = client.parsePaginationHeaders(response.headers, page, per_page);
 
   // Format response
   return formatResponse(

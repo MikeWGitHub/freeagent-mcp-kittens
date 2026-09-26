@@ -37,7 +37,7 @@ export async function listBills(
 
   const response = await client.get<{ bills: FreeAgentBill[] }>("/bills", queryParams);
   const bills = response.data.bills ?? [];
-  const pagination = client.parsePaginationHeaders(response.headers);
+  const pagination = client.parsePaginationHeaders(response.headers, page, per_page);
 
   return formatResponse(
     {
@@ -113,7 +113,7 @@ export async function getBill(
       if (bill.bill_items && bill.bill_items.length > 0) {
         lines.push("", "## Line items");
         for (const item of bill.bill_items) {
-          lines.push(`- ${item.description ?? ""} (${item.category ?? ""}): ${item.quantity ?? ""} × ${item.price ?? ""}`);
+          lines.push(`- ${item.description ?? ""} (${item.category ?? ""}): ${item.total_value ?? ""}${item.quantity ? ` (qty ${item.quantity})` : ""}`);
         }
       }
       return lines.join("\n");
@@ -125,11 +125,39 @@ export async function createBill(
   client: FreeAgentApiClient,
   params: CreateBillInput
 ): Promise<string> {
+  // FreeAgent bill items require total_value (gross) or total_value_ex_tax
+  // (net); there is no price field (dev.freeagent.com/docs/bills). The old
+  // price/quantity shape was always rejected (v1.2.3).
+  const billItems = params.bill_items.map((item, i) => {
+    const hasGross = item.total_value !== undefined && item.total_value !== "";
+    const hasNet = item.total_value_ex_tax !== undefined && item.total_value_ex_tax !== "";
+    if (hasGross === hasNet) {
+      throw new Error(
+        `Bill item ${i + 1}: provide exactly one of total_value (including VAT) or total_value_ex_tax (excluding VAT), as a positive amount.`
+      );
+    }
+    const amount = Number(hasGross ? item.total_value : item.total_value_ex_tax);
+    if (!Number.isFinite(amount) || amount < 0) {
+      throw new Error(
+        `Bill item ${i + 1}: the line total must be a positive decimal string (e.g. '120.00'); FreeAgent bills are entered as positive amounts.`
+      );
+    }
+    const out: Record<string, unknown> = { category: item.category };
+    if (hasGross) out.total_value = item.total_value;
+    else out.total_value_ex_tax = item.total_value_ex_tax;
+    if (item.description) out.description = item.description;
+    if (item.quantity) out.quantity = item.quantity;
+    if (item.unit) out.unit = item.unit;
+    if (item.sales_tax_rate) out.sales_tax_rate = item.sales_tax_rate;
+    if (item.sales_tax_status) out.sales_tax_status = item.sales_tax_status;
+    return out;
+  });
+
   const payload: Record<string, unknown> = {
     contact: params.contact,
     dated_on: params.dated_on,
     ec_status: params.ec_status ?? "UK/Non-EC",
-    bill_items: params.bill_items,
+    bill_items: billItems,
   };
   if (params.due_on) payload.due_on = params.due_on;
   if (params.reference) payload.reference = params.reference;

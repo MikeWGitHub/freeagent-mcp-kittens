@@ -29,7 +29,7 @@ export async function listPriceListItems(
     { page: page.toString(), per_page: per_page.toString() }
   );
   const items = response.data.price_list_items ?? [];
-  const pagination = client.parsePaginationHeaders(response.headers);
+  const pagination = client.parsePaginationHeaders(response.headers, page, per_page);
 
   return formatResponse(
     {

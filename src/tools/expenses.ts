@@ -44,7 +44,7 @@ export async function listExpenses(
     queryParams
   );
   const expenses = response.data.expenses || [];
-  const pagination = client.parsePaginationHeaders(response.headers);
+  const pagination = client.parsePaginationHeaders(response.headers, page, per_page);
 
   // Format response - return full expense objects like get_expense does
   // This ensures consistency and includes all fields from the API

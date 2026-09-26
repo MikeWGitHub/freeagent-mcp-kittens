@@ -38,7 +38,7 @@ export async function listEstimates(
 
   const response = await client.get<{ estimates: FreeAgentEstimate[] }>("/estimates", queryParams);
   const estimates = response.data.estimates ?? [];
-  const pagination = client.parsePaginationHeaders(response.headers);
+  const pagination = client.parsePaginationHeaders(response.headers, page, per_page);
 
   return formatResponse(
     {

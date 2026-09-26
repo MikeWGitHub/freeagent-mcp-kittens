@@ -44,7 +44,7 @@ export async function listTimeslips(
     queryParams
   );
   const timeslips = response.data.timeslips || [];
-  const pagination = client.parsePaginationHeaders(response.headers);
+  const pagination = client.parsePaginationHeaders(response.headers, page, per_page);
 
   // Format response
   return formatResponse(

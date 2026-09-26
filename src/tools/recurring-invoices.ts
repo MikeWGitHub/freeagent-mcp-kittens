@@ -36,7 +36,7 @@ export async function listRecurringInvoices(
     queryParams
   );
   const items = response.data.recurring_invoices ?? [];
-  const pagination = client.parsePaginationHeaders(response.headers);
+  const pagination = client.parsePaginationHeaders(response.headers, page, per_page);
 
   return formatResponse(
     {

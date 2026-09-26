@@ -44,7 +44,7 @@ export async function listBankTransactionExplanations(
     queryParams
   );
   const explanations = response.data.bank_transaction_explanations || [];
-  const pagination = client.parsePaginationHeaders(response.headers);
+  const pagination = client.parsePaginationHeaders(response.headers, page, per_page);
 
   // Format response
   return formatResponse(
@@ -241,9 +241,11 @@ export async function createBankTransactionExplanation(
     explanationPayload.transfer_bank_account = params.transfer_bank_account;
   }
 
-  // Capital asset depreciation profile
+  // Capital asset depreciation profile. FreeAgent only reads it nested under
+  // capital_asset (dev.freeagent.com/docs/depreciation_profiles); at the root
+  // it was silently ignored and the sub-category default applied (v1.2.3).
   if (params.depreciation_profile) {
-    explanationPayload.depreciation_profile = params.depreciation_profile;
+    explanationPayload.capital_asset = { depreciation_profile: params.depreciation_profile };
   }
 
   if (params.attachment) {
@@ -319,9 +321,9 @@ export async function updateBankTransactionExplanation(
     explanationPayload.transfer_bank_account = updateFields.transfer_bank_account;
   }
 
-  // Capital asset depreciation profile
+  // Capital asset depreciation profile, nested under capital_asset (see create).
   if (updateFields.depreciation_profile !== undefined) {
-    explanationPayload.depreciation_profile = updateFields.depreciation_profile;
+    explanationPayload.capital_asset = { depreciation_profile: updateFields.depreciation_profile };
   }
 
   if (updateFields.attachment !== undefined) {

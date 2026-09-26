@@ -60,7 +60,9 @@ export async function resolveCategory(
 ): Promise<string> {
   if (hint.startsWith("http")) return hint;
 
-  if (/^\d+$/.test(hint)) {
+  // Nominal codes, including sub-coded accounts such as 602-3 (capital asset
+  // types), 750-1 (banks) or 902-1 (users), resolve via GET /categories/:code.
+  if (/^\d+(-\d+)?$/.test(hint)) {
     const category = unwrapSingleCategory(
       (await client.get<Record<string, FreeAgentCategory | FreeAgentCategory[] | undefined>>(
         `/categories/${hint}`
@@ -75,9 +77,16 @@ export async function resolveCategory(
     return category.url;
   }
 
+  // Name search: top-level categories first; fall back to sub-accounts
+  // (sub_accounts=true replaces e.g. 602 with 602-1..602-4) so names such as
+  // "Motor Vehicle Purchase" can be found too.
   const response = await client.get<CategoryListResponse>("/categories");
-  const all = flattenCategories(response.data);
   const lower = hint.toLowerCase();
+  let all = flattenCategories(response.data);
+  if (!all.some((c) => c.description.toLowerCase().includes(lower))) {
+    const sub = await client.get<CategoryListResponse>("/categories", { sub_accounts: true });
+    all = flattenCategories(sub.data);
+  }
 
   const exact = all.filter((c) => c.description.toLowerCase() === lower);
   if (exact.length === 1) return exact[0].url;
@@ -237,4 +246,89 @@ export async function resolveBill(
     `No open bill has reference "${hint}" (searched ${bills.length} open bills across ${pagesFetched} page(s)${capped ? ", capped" : ""}). ` +
     `Check the reference, or pass the bill ID/URL directly.`
   );
+}
+
+/**
+ * Capital asset categories 601-607 need a capital_asset_type on journal entries
+ * (dev.freeagent.com/docs/journal_sets); FreeAgent answers a bare 602 with a
+ * misleading 404. Stock categories need stock_item + stock_altering_quantity.
+ */
+const CAPITAL_ASSET_CODE = /^60[1-7]$/;
+
+function nominalCodeFromCategory(hintOrUrl: string): string | undefined {
+  const m = hintOrUrl.match(/(?:^|\/categories\/)(\d+(?:-\d+)?)$/);
+  return m ? m[1] : undefined;
+}
+
+/**
+ * Resolve a capital asset type hint (URL, numeric ID, or name such as
+ * "Motor Vehicles") to its URL.
+ */
+export async function resolveCapitalAssetType(
+  client: FreeAgentApiClient,
+  hint: string
+): Promise<string> {
+  if (hint.startsWith("http")) return hint;
+  if (/^\d+$/.test(hint)) return client.resourceUrl("capital_asset_types", hint);
+  const response = await client.get<{ capital_asset_types?: { url: string; name: string }[] }>(
+    "/capital_asset_types"
+  );
+  const types = response.data.capital_asset_types ?? [];
+  const lower = hint.toLowerCase();
+  const exact = types.filter((t) => t.name.toLowerCase() === lower);
+  const matches = exact.length > 0 ? exact : types.filter((t) => t.name.toLowerCase().includes(lower));
+  if (matches.length === 1) return matches[0].url;
+  const names = types.map((t) => t.name).join(", ");
+  throw new Error(
+    matches.length > 1
+      ? `Capital asset type "${hint}" is ambiguous. Choose one of: ${names}.`
+      : `No capital asset type matches "${hint}". Available: ${names}.`
+  );
+}
+
+/**
+ * Resolve a journal entry's category, adding capital_asset_type where FreeAgent
+ * requires it. A sub-coded capital asset category ("602-3") is sent as its
+ * parent category plus the sub-account's capital_asset_type, mirroring how
+ * user categories are sent as the parent (902) plus a user.
+ */
+export async function resolveJournalCategory(
+  client: FreeAgentApiClient,
+  hint: string,
+  capitalAssetTypeHint?: string
+): Promise<{ category: string; capital_asset_type?: string }> {
+  const code = nominalCodeFromCategory(hint);
+  const sub = code?.match(/^(60[1-7])-(\d+)$/);
+  if (sub) {
+    const category = unwrapSingleCategory(
+      (await client.get<Record<string, FreeAgentCategory | FreeAgentCategory[] | undefined>>(
+        `/categories/${code}`
+      )).data
+    ) as (FreeAgentCategory & { capital_asset_type?: string }) | undefined;
+    const typeUrl = capitalAssetTypeHint
+      ? await resolveCapitalAssetType(client, capitalAssetTypeHint)
+      : category?.capital_asset_type;
+    if (!typeUrl) {
+      throw new Error(
+        `Category ${code} did not return a capital_asset_type. Pass capital_asset_type explicitly (e.g. 'Motor Vehicles').`
+      );
+    }
+    return { category: client.resourceUrl("categories", sub[1]), capital_asset_type: typeUrl };
+  }
+
+  const url = await resolveCategory(client, hint);
+  const resolvedCode = nominalCodeFromCategory(url) ?? code;
+  if (resolvedCode && CAPITAL_ASSET_CODE.test(resolvedCode)) {
+    if (!capitalAssetTypeHint) {
+      throw new Error(
+        `Category ${resolvedCode} is a capital asset category: FreeAgent requires a capital asset type. ` +
+          `Pass the sub-coded category (e.g. '${resolvedCode}-3' for Motor Vehicles; see freeagent_list_categories with sub_accounts: true) ` +
+          `or set capital_asset_type (e.g. 'Motor Vehicles').`
+      );
+    }
+    return { category: url, capital_asset_type: await resolveCapitalAssetType(client, capitalAssetTypeHint) };
+  }
+  return capitalAssetTypeHint
+    ? { category: url, capital_asset_type: await resolveCapitalAssetType(client, capitalAssetTypeHint) }
+    : { category: url };
 }

@@ -40,7 +40,7 @@ export async function listContacts(
   );
 
   const contacts = response.data.contacts || [];
-  const pagination = client.parsePaginationHeaders(response.headers);
+  const pagination = client.parsePaginationHeaders(response.headers, params.page, params.per_page);
 
   // Format response
   const formattedResponse = formatResponse(

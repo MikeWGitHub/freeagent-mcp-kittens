@@ -48,7 +48,7 @@ export async function listStockItems(
     queryParams
   );
   const items = response.data.stock_items ?? [];
-  const pagination = client.parsePaginationHeaders(response.headers);
+  const pagination = client.parsePaginationHeaders(response.headers, params.page, params.per_page);
 
   const formatted = formatResponse(
     {

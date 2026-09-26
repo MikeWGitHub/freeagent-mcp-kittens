@@ -2,6 +2,23 @@
 
 All notable changes to this fork are documented here. Versions are git tags; see GitHub Releases for full notes.
 
+## [1.2.3] - 2026-09-26
+
+Fixes from an independent review of v1.2.2 (Grok), each checked against the FreeAgent API docs and live behaviour before changing.
+
+- **Depreciation profiles now take effect.** `depreciation_profile` on bank explanation create/update is sent nested under `capital_asset`, where FreeAgent reads it. At the root it was silently ignored and the sub-category default (3 years) applied; seen live on 26 Sep 2026.
+- **Journals can post to capital asset categories.** Entries accept `capital_asset_type` (URL, ID or name, e.g. "Motor Vehicles") and stock entries accept `stock_item` / `stock_altering_quantity`. A sub-coded category such as `602-3` is sent as the parent category plus its capital asset type. A bare 601-607 entry without a type is refused with a clear message instead of FreeAgent's misleading 404.
+- **Sub-coded categories resolve.** Nominal codes like `602-3`, `750-1` and `902-1` go to `/categories/:code`; name searches fall back to `sub_accounts=true`; `list_categories` takes `sub_accounts`.
+- **create_bill works.** Lines send `total_value` (gross) or `total_value_ex_tax` (net), exactly one, positive. The old `price`/`quantity` shape was always rejected by FreeAgent and is now refused by the schema.
+- **Invoice lines can set VAT.** `create_invoice` items accept `sales_tax_rate` (percentage-guarded), `sales_tax_status` and `category`; `price` is documented as net of VAT.
+- **Sign conventions documented.** Bank explanation `gross_value` is negative for money out (the opposite of journals); `sales_tax_value` carries the same sign.
+- **discount_percent is percentage-guarded** like `sales_tax_rate` (create/update invoice, create estimate, invoice_from_timeslips): `"0.20"` is rejected.
+- **Pagination.** `list_journal_sets` follows every page. `list_projects` / `list_tasks` say when more pages exist. `parsePaginationHeaders` accepts relative or unquoted `Link` headers and falls back to `X-Total-Count` when no usable `Link` arrives (list calls were seen reporting `has_more: false` on every page).
+- **Transport:** redirects are never followed, so a 3xx cannot carry the bearer to another host.
+- **Display:** a numeric category `auto_sales_tax_rate` of 20 renders as 20.0%, not 2000.0%.
+- Tests: 23 new payload-level tests (274 total).
+- Reviewed but not changed: raw "URL or ID" arguments on explanation/expense/bill create. FreeAgent accepted bare IDs and nominal codes in live calls on 26 Sep 2026, so this is not the 422 the review predicted. `initial_mileage` naming left for a separate check.
+
 ## [1.2.2] - 2026-09-26
 
 VAT rate format fix. FreeAgent takes `sales_tax_rate` as a percentage string ("20.0" = 20%), but eight tool schema fields described it as a decimal fraction ("0.20" for 20%). Following that description records VAT at 0.2%: three live bank explanations were written that way on 18 Sep 2026 and corrected by hand on 26 Sep 2026.

@@ -21,7 +21,8 @@ import type {
   DeleteJournalSetInput,
 } from "../schemas/index.js";
 import { extractIdFromUrl } from "../services/formatter.js";
-import { resolveCategory, resolveUser } from "../services/resolvers.js";
+import { fetchAllPages } from "../services/api-client.js";
+import { resolveCapitalAssetType, resolveJournalCategory, resolveUser } from "../services/resolvers.js";
 
 interface JournalEntry {
   url?: string;
@@ -69,15 +70,21 @@ export async function listJournalSets(
   if (params.to_date) query.to_date = params.to_date;
   if (params.tag) query.tag = params.tag;
 
-  const response = await client.get<{ journal_sets: JournalSet[] }>(
+  // Follow every page (v1.2.3): a single unpaginated call returned one page
+  // while the heading read as the complete list.
+  const { items: sets, capped } = await fetchAllPages<JournalSet>(
+    client,
     "/journal_sets",
-    query
+    query,
+    "journal_sets"
   );
-  const sets = response.data.journal_sets ?? [];
+  const capNote = capped
+    ? "\n\n⚠️ Stopped after 1,000 journal sets; narrow the date range to see the rest."
+    : "";
 
   if (params.response_format === "json") return JSON.stringify(sets, null, 2);
   if (sets.length === 0) return "No journal sets found for the given filters.";
-  return `# Journal Sets (${sets.length})\n\n` + sets.map(formatSet).join("\n\n");
+  return `# Journal Sets (${sets.length})${capNote}\n\n` + sets.map(formatSet).join("\n\n");
 }
 
 export async function getJournalSet(
@@ -95,13 +102,30 @@ export async function getJournalSet(
 
 async function resolveEntry(
   client: FreeAgentApiClient,
-  entry: { category?: string; debit_value?: number; description?: string; user?: string }
+  entry: {
+    category?: string;
+    debit_value?: number;
+    description?: string;
+    user?: string;
+    capital_asset_type?: string;
+    stock_item?: string;
+    stock_altering_quantity?: number;
+  }
 ): Promise<Record<string, unknown>> {
   const out: Record<string, unknown> = {};
-  if (entry.category !== undefined) out.category = await resolveCategory(client, entry.category);
+  if (entry.category !== undefined) {
+    // Adds capital_asset_type for 601-607 (required by FreeAgent; v1.2.3).
+    const resolved = await resolveJournalCategory(client, entry.category, entry.capital_asset_type);
+    out.category = resolved.category;
+    if (resolved.capital_asset_type) out.capital_asset_type = resolved.capital_asset_type;
+  } else if (entry.capital_asset_type !== undefined) {
+    out.capital_asset_type = await resolveCapitalAssetType(client, entry.capital_asset_type);
+  }
   if (entry.debit_value !== undefined) out.debit_value = entry.debit_value.toFixed(2);
   if (entry.description !== undefined) out.description = entry.description;
   if (entry.user !== undefined) out.user = await resolveUser(client, entry.user);
+  if (entry.stock_item !== undefined) out.stock_item = client.resourceUrl("stock_items", entry.stock_item);
+  if (entry.stock_altering_quantity !== undefined) out.stock_altering_quantity = entry.stock_altering_quantity;
   return out;
 }
 

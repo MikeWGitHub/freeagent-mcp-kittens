@@ -1,6 +1,6 @@
 {
   "name": "freeagent-mcp-server",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "MCP server for FreeAgent accounting API integration",
   "type": "module",
   "main": "dist/index.js",

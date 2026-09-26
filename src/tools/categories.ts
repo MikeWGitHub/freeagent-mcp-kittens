@@ -8,9 +8,12 @@ import { unwrapSingleCategory } from "../services/resolvers.js";
  * ("Standard rate") for others; multiplying the string produced "NaN%"
  * (audit B-MED-2). Render numbers as percentages and strings verbatim.
  */
-function formatAutoSalesTaxRate(rate: number | string): string {
+export function formatAutoSalesTaxRate(rate: number | string): string {
   const n = typeof rate === "number" ? rate : Number(rate);
-  if (Number.isFinite(n)) return `${(n * 100).toFixed(1)}%`;
+  // FreeAgent rates are percentages ("20.0"); only a value in (0, 1) looks like
+  // a fraction, so scale that one and show everything else as-is (v1.2.3:
+  // a numeric 20 used to render as 2000.0%).
+  if (Number.isFinite(n)) return `${(n > 0 && n < 1 ? n * 100 : n).toFixed(1)}%`;
   return String(rate);
 }
 import type { ListCategoriesInput, GetCategoryInput } from "../schemas/index.js";
@@ -22,7 +25,10 @@ export async function listCategories(
   apiClient: FreeAgentApiClient,
   params: ListCategoriesInput
 ): Promise<string> {
-  const response = await apiClient.get<Record<string, FreeAgentCategory[]>>("/categories");
+  const response = await apiClient.get<Record<string, FreeAgentCategory[]>>(
+    "/categories",
+    params.sub_accounts ? { sub_accounts: true } : undefined
+  );
 
   // Categories are returned in four separate arrays
   const adminExpenses = response.data.admin_expenses_categories || [];

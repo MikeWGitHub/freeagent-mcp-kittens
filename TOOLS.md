@@ -167,14 +167,17 @@ Creates a new invoice in draft status.
 - `invoice_items` (array, required): Array of line items, each containing:
   - `item_type` (string): Type like "Hours", "Days", "Products"
   - `description` (string): Item description
-  - `price` (string): Price per unit
+  - `price` (string): Unit price NET of VAT; VAT is added using `sales_tax_rate` or the account default
   - `quantity` (string): Quantity
+  - `sales_tax_rate` (string, optional): percentage string, e.g. `"20.0"`; decimal fractions are rejected
+  - `sales_tax_status` (string, optional): `TAXABLE`, `EXEMPT` or `OUT_OF_SCOPE`
+  - `category` (string, optional): income category URL or nominal code
 - `due_on` (string, optional): Due date in YYYY-MM-DD format
 - `reference` (string, optional): Invoice reference number
 - `currency` (string, default: "GBP"): Currency code (GBP, USD, EUR, etc.)
 - `comments` (string, optional): Invoice comments/notes
 - `payment_terms_in_days` (number, optional): Payment terms in days
-- `discount_percent` (string, optional): Discount as a decimal string (e.g. `"20"` for 20%).
+- `discount_percent` (string, optional): Discount as a percentage string (e.g. `"20"` for 20%). Decimal fractions such as `"0.20"` are rejected.
 
 **Example usage:**
 ```
@@ -222,7 +225,7 @@ Intent bundle: drafts an invoice from a contact's unbilled timeslips in a single
 - `reference` (string, optional): Invoice reference.
 - `currency` (string, optional): Currency code. Defaults to GBP.
 - `payment_terms_in_days` (number, optional): Payment terms in days.
-- `discount_percent` (string, optional): Discount as a decimal string (e.g. `"20"`).
+- `discount_percent` (string, optional): Discount as a percentage string (e.g. `"20"`). Decimal fractions such as `"0.20"` are rejected.
 - `link_timeslips` (boolean, default: false): When true, after the invoice is drafted the tool PUTs each source timeslip with `billed_on_invoice` set. FreeAgent sometimes rejects external writes to that field; any failures are counted and listed in the response without failing the whole tool.
 
 **Example usage:**
@@ -810,7 +813,7 @@ Explains (categorizes) a bank transaction by linking it to invoices, bills, or c
 **Parameters (Required):**
 - `bank_transaction` (string): Bank transaction URL or ID
 - `dated_on` (string): Transaction date in YYYY-MM-DD format
-- `gross_value` (string): Amount as decimal string (negative for debits)
+- `gross_value` (string): Amount as decimal string: NEGATIVE for money out (e.g. `"-47.99"` for a £47.99 payment), positive for money in. `sales_tax_value`, if given, carries the same sign.
 
 **Optional:**
 - `description` (string): Transaction description
@@ -1092,6 +1095,7 @@ Lists all categories in your FreeAgent account for expenses, invoices, and trans
 
 **Parameters:**
 - `view` (string, optional): Filter by type - `all`, `standard` (system categories), `custom` (user-created)
+- `sub_accounts` (boolean, optional): list sub-accounts (e.g. `602-1` Computer Equipment, `602-3` Motor Vehicles, `750-x` banks, `902-x` users) in place of their parents
 - `response_format` (string, default: "markdown"): Output format
 
 **Example usage:**
@@ -1171,9 +1175,11 @@ Creates a new supplier bill to record money owed.
 - `bill_items` (array): Line items, each containing:
   - `category` (string): Category URL or nominal code
   - `description` (string, optional): Line description
-  - `price` (string): Unit price
-  - `quantity` (string): Quantity
+  - `total_value` (string): Line total INCLUDING VAT, positive (e.g. `"120.00"`), or
+  - `total_value_ex_tax` (string): Line total EXCLUDING VAT, positive. Exactly one of the two is required; there is no `price` field on FreeAgent bills
+  - `quantity`, `unit` (string, optional): informational
   - `sales_tax_rate` (string, optional): percentage string, e.g. `"20.0"` for 20%
+  - `sales_tax_status` (string, optional): `TAXABLE`, `EXEMPT` or `OUT_OF_SCOPE`
 
 **Optional:**
 - `due_on` (string): Due date (YYYY-MM-DD)
@@ -1246,7 +1252,7 @@ Drafts a new estimate for a contact.
 - `comments` (string): Comments shown on the estimate
 - `terms_and_conditions` (string): Terms & conditions text
 - `payment_terms_in_days` (number)
-- `discount_percent` (string): Discount as a decimal string (e.g. `"20"`)
+- `discount_percent` (string): Discount as a percentage string (e.g. `"20"`); `"0.20"` is rejected
 - `ec_status` (string): Defaults to `"UK/Non-EC"`
 
 **Example usage:**
@@ -1401,7 +1407,7 @@ The following tools were added in the account-coverage expansion. Full parameter
 
 | Tool | Purpose |
 |---|---|
-| `freeagent_list_capital_assets` | The asset register. Assets are CREATED by explaining a transaction/bill/expense against a capital asset sub-category (e.g. `602-1`), optionally with a nested `depreciation_profile` — now supported on explanation create/update. |
+| `freeagent_list_capital_assets` | The asset register. Assets are CREATED by explaining a transaction/bill/expense against a capital asset sub-category (e.g. `602-1`), optionally with a `depreciation_profile` (sent nested under `capital_asset`, which is where FreeAgent reads it; before v1.2.3 it was ignored and the sub-category default applied). |
 | `freeagent_get_capital_asset` | One asset with depreciation profile and lifecycle history. |
 | `freeagent_list_capital_asset_types` | System and custom asset types. |
 
@@ -1448,7 +1454,7 @@ These are the fork's original headline additions (pre-dating the July 2026 cover
 | Tool | Purpose |
 |---|---|
 | `freeagent_list_journal_sets` / `freeagent_get_journal_set` | List and inspect balanced sets of manual accounting entries, filterable by date range and tag. |
-| `freeagent_create_journal_set` | Create a balanced journal set (debits positive, credits negative, must sum to zero — validated in the handler because schema `.refine()` does not survive `.shape` registration). **Breaking in v1.2.0:** requires `confirm: true`. Categories accept names, nominal codes, or URLs. The intended IoM workflow: zero the Corporation Tax charge each year (0% rate). CAUTION: journal sets created with a `tag` become uneditable in the FreeAgent web UI. |
+| `freeagent_create_journal_set` | Create a balanced journal set (debits positive, credits negative, must sum to zero — validated in the handler because schema `.refine()` does not survive `.shape` registration). **Breaking in v1.2.0:** requires `confirm: true`. Categories accept names, nominal codes (including sub-codes such as `602-3`), or URLs. Capital asset categories 601-607 need a capital asset type: pass the sub-coded category (sent as the parent plus `capital_asset_type`) or set `capital_asset_type` (URL, ID or name such as `"Motor Vehicles"`); a bare `602` without one is refused before the API call. Stock categories take `stock_item` and `stock_altering_quantity`. The intended IoM workflow: zero the Corporation Tax charge each year (0% rate). CAUTION: journal sets created with a `tag` become uneditable in the FreeAgent web UI. |
 | `freeagent_update_journal_set` | Modify, add, or remove (`_destroy`) entries on an existing set. Requires `confirm: true`. The post-update set is balance-checked client-side before the write. |
 | `freeagent_delete_journal_set` | Permanently delete a journal set and all its entries. Requires `confirm: true`; the reply records what was removed. |
 | `freeagent_upload_bank_statement` | Add bank transactions via statement upload. Requires `confirm: true`. FreeAgent silently de-duplicates rows matching an existing transaction's date+amount+description — supply a unique `fitid` or vary the description for deliberate same-day twins. The import is asynchronous, so the tool snapshots the date range beforehand, polls afterwards, and reports exactly which rows imported (paginated, so busy ranges verify correctly). |

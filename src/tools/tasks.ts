@@ -46,7 +46,15 @@ export async function listTasks(
     })
     .join("\n\n");
 
-  return `Found ${response.data.tasks.length} task(s):\n\n${taskList}`;
+  // Say when this is one page of several (v1.2.3); the heading used to read
+  // as the complete list.
+  const pagination = apiClient.parsePaginationHeaders(response.headers, params.page, params.per_page);
+  const more = pagination.hasMore
+    ? `\n\nMore results: this is page ${params.page ?? 1}` +
+      (pagination.totalCount !== undefined ? ` of ${pagination.totalCount} total tasks` : "") +
+      `. Request page ${pagination.nextPage ?? (params.page ?? 1) + 1} for the next page.`
+    : "";
+  return `Found ${response.data.tasks.length} task(s) on this page:\n\n${taskList}${more}`;
 }
 
 /**

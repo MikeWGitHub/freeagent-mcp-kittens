@@ -43,7 +43,7 @@ export async function listCreditNotes(
     queryParams
   );
   const creditNotes = response.data.credit_notes ?? [];
-  const pagination = client.parsePaginationHeaders(response.headers);
+  const pagination = client.parsePaginationHeaders(response.headers, params.page, params.per_page);
 
   const formatted = formatResponse(
     {

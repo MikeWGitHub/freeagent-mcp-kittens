@@ -81,7 +81,10 @@ export class FreeAgentApiClient {
         "Accept": "application/json",
         "Content-Type": "application/json"
       },
-      timeout: requestTimeoutMs()
+      timeout: requestTimeoutMs(),
+      // Never follow redirects: the bearer is attached per request after the
+      // host allowlist check, so a 3xx to another host would carry it (v1.2.3).
+      maxRedirects: 0
     });
 
     // Attach the current token per request rather than freezing it at construction,
@@ -437,7 +440,11 @@ export class FreeAgentApiClient {
   /**
    * Parse pagination info from response headers
    */
-  parsePaginationHeaders(headers: Record<string, string | undefined>): {
+  parsePaginationHeaders(
+    headers: Record<string, string | undefined>,
+    page?: number,
+    perPage?: number
+  ): {
     totalCount?: number;
     hasMore: boolean;
     nextPage?: number;
@@ -453,18 +460,33 @@ export class FreeAgentApiClient {
     if (linkHeader) {
       // Parse Link header: <url>; rel="next", <url>; rel="last"
       const links = linkHeader.split(",").map(link => link.trim());
-      const nextLink = links.find(link => link.includes('rel="next"'));
-      
+      const nextLink = links.find(link => /rel\s*=\s*"?next"?/i.test(link));
+
       if (nextLink) {
         hasMore = true;
         const urlMatch = nextLink.match(/<([^>]+)>/);
         if (urlMatch) {
-          const url = new URL(urlMatch[1]);
-          const pageParam = url.searchParams.get("page");
-          if (pageParam) {
-            nextPage = parseInt(pageParam, 10);
+          try {
+            // Tolerate relative links as well as absolute ones.
+            const url = new URL(urlMatch[1], "https://api.freeagent.com");
+            const pageParam = url.searchParams.get("page");
+            if (pageParam) {
+              nextPage = parseInt(pageParam, 10);
+            }
+          } catch {
+            // Keep hasMore; leave nextPage for the caller to compute.
           }
         }
+      }
+    }
+
+    // Fallback when no usable Link header arrives: live list calls were seen
+    // reporting has_more: false on every page despite X-Total-Count showing
+    // more rows. If the caller passes page/perPage, derive it from the count.
+    if (!hasMore && totalCount !== undefined && page !== undefined && perPage !== undefined) {
+      if (page * perPage < totalCount) {
+        hasMore = true;
+        nextPage = page + 1;
       }
     }
 
@@ -503,7 +525,7 @@ export async function fetchAllPages<T>(
       per_page: 100,
     });
     items.push(...(response.data[key] ?? []));
-    const pagination = client.parsePaginationHeaders(response.headers);
+    const pagination = client.parsePaginationHeaders(response.headers, page, 100);
     if (!pagination.hasMore) break;
     if (page >= maxPages) {
       capped = true;

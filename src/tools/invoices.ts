@@ -57,7 +57,7 @@ export async function listInvoices(
   );
 
   const invoices = response.data.invoices || [];
-  const pagination = client.parsePaginationHeaders(response.headers);
+  const pagination = client.parsePaginationHeaders(response.headers, params.page, params.per_page);
 
   const formattedResponse = formatResponse(
     {

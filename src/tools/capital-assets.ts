@@ -50,7 +50,7 @@ export async function listCapitalAssets(
     queryParams
   );
   const assets = response.data.capital_assets ?? [];
-  const pagination = client.parsePaginationHeaders(response.headers);
+  const pagination = client.parsePaginationHeaders(response.headers, params.page, params.per_page);
 
   const formatted = formatResponse(
     {
