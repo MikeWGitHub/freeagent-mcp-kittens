@@ -2,6 +2,16 @@
 
 All notable changes to this fork are documented here. Versions are git tags; see GitHub Releases for full notes.
 
+## [1.2.2] - 2026-09-26
+
+VAT rate format fix. FreeAgent takes `sales_tax_rate` as a percentage string ("20.0" = 20%), but eight tool schema fields described it as a decimal fraction ("0.20" for 20%). Following that description records VAT at 0.2%: three live bank explanations were written that way on 18 Sep 2026 and corrected by hand on 26 Sep 2026.
+
+- New shared `SalesTaxRateSchema` / `OptionalSalesTaxRateSchema`: percentage strings only (0 to 100); values strictly between 0 and 1 are rejected with an error explaining the percentage format, so a decimal fraction can no longer reach the API. Used by expense create/update, log_expense, bank-transaction explanation create/update, bill and estimate line items, and price list item create/update, plus invoice and bill line-item updates.
+- Tool descriptions now say "'20.0' for 20%" and warn against decimal fractions.
+- Display fix: expense and explanation output no longer multiplies the stored rate by 100 (a 20% rate showed as "2000%").
+- TOOLS.md parameter docs corrected.
+- Tests: schema accepts/rejects cases, and every tool shape that exposes `sales_tax_rate` rejects "0.20".
+
 ## [1.2.1] - 2026-08-21
 
 Ship tag for the v1.2 backlog. Tag `v1.2.0` was cut before the review follow-up and is not rewritten.

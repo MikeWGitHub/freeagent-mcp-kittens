@@ -105,7 +105,7 @@ export async function listExpenses(
           taxDetails.push(`Status: ${expense.sales_tax_status}`);
         }
         if (expense.sales_tax_rate) {
-          taxDetails.push(`Rate: ${parseFloat(expense.sales_tax_rate) * 100}%`);
+          taxDetails.push(`Rate: ${parseFloat(expense.sales_tax_rate)}%`);
         }
         if (taxDetails.length > 0) {
           lines.push(`**Tax**: ${taxDetails.join(' | ')}`);
@@ -177,7 +177,7 @@ export async function getExpense(
       }
 
       if (expense.sales_tax_rate) {
-        lines.push(`- **Sales Tax Rate**: ${parseFloat(expense.sales_tax_rate) * 100}%`);
+        lines.push(`- **Sales Tax Rate**: ${parseFloat(expense.sales_tax_rate)}%`);
       }
 
       if (expense.attachment_count && expense.attachment_count > 0) {

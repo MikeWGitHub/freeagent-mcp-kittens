@@ -5,6 +5,33 @@
 import { z } from "zod";
 import { ResponseFormat, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from "../constants.js";
 
+// Sales tax (VAT) rate.
+// FreeAgent expresses rates as PERCENTAGE strings: "20.0" means 20%. A decimal
+// fraction such as "0.20" is accepted by the API but recorded as 0.2%, which
+// silently under-records VAT (seen on live explanations in Sep 2026). Values
+// strictly between 0 and 1 are therefore rejected rather than passed through.
+export const SALES_TAX_RATE_DESCRIPTION =
+  "Sales tax (VAT) rate as a PERCENTAGE string: '20.0' for 20%, '5.0' for 5%, '0' for zero-rated. " +
+  "Do NOT send a decimal fraction: '0.20' would be recorded as 0.2% and is rejected.";
+
+export const SalesTaxRateSchema = z.string()
+  .trim()
+  .regex(/^\d{1,3}(\.\d+)?$/, "Sales tax rate must be a non-negative percentage such as '20.0'.")
+  .refine((v) => {
+    const n = Number(v);
+    return !(n > 0 && n < 1);
+  }, {
+    message:
+      "Sales tax rate looks like a decimal fraction. FreeAgent expects a percentage: " +
+      "use '20.0' for 20%, '5.0' for 5%, '0' for zero-rated.",
+  })
+  .refine((v) => Number(v) <= 100, {
+    message: "Sales tax rate is a percentage and cannot exceed 100 (e.g. '20.0').",
+  })
+  .describe(SALES_TAX_RATE_DESCRIPTION);
+
+export const OptionalSalesTaxRateSchema = SalesTaxRateSchema.optional().describe(SALES_TAX_RATE_DESCRIPTION);
+
 // Base pagination schema
 export const PaginationSchema = z.object({
   page: z.number()
@@ -185,9 +212,7 @@ export const CreateExpenseInputSchema = z.object({
   gross_value: z.string()
     .optional()
     .describe("Total amount including tax (decimal string). IMPORTANT: Use NEGATIVE values for normal expenses (e.g., '-10.00' for a £10 expense). Positive values create refunds due FROM the claimant. Required unless category is 'Mileage'."),
-  sales_tax_rate: z.string()
-    .optional()
-    .describe("Sales tax rate as decimal (e.g., '0.20' for 20%)"),
+  sales_tax_rate: OptionalSalesTaxRateSchema,
   manual_sales_tax_amount: z.string()
     .optional()
     .describe("Manual sales tax amount (overrides sales_tax_rate)"),
@@ -266,9 +291,7 @@ export const UpdateExpenseInputSchema = z.object({
   gross_value: z.string()
     .optional()
     .describe("Total amount including tax (decimal string). IMPORTANT: Use NEGATIVE values for normal expenses (e.g., '-10.00' for a £10 expense). Positive values create refunds due FROM the claimant. Required unless category is 'Mileage'."),
-  sales_tax_rate: z.string()
-    .optional()
-    .describe("Sales tax rate as decimal (e.g., '0.20' for 20%)"),
+  sales_tax_rate: OptionalSalesTaxRateSchema,
   manual_sales_tax_amount: z.string()
     .optional()
     .describe("Manual sales tax amount (overrides sales_tax_rate)"),
@@ -622,9 +645,7 @@ export const CreateBankTransactionExplanationInputSchema = z.object({
     .optional()
     .describe("Project URL or ID to associate with transaction"),
   // Tax information
-  sales_tax_rate: z.string()
-    .optional()
-    .describe("Sales tax rate as decimal (e.g., '0.20' for 20%)"),
+  sales_tax_rate: OptionalSalesTaxRateSchema,
   sales_tax_value: z.string()
     .optional()
     .describe("Sales tax amount"),
@@ -685,9 +706,7 @@ export const UpdateBankTransactionExplanationInputSchema = z.object({
     .optional()
     .describe("Project URL or ID to associate with transaction"),
   // Tax information
-  sales_tax_rate: z.string()
-    .optional()
-    .describe("Sales tax rate as decimal (e.g., '0.20' for 20%)"),
+  sales_tax_rate: OptionalSalesTaxRateSchema,
   sales_tax_value: z.string()
     .optional()
     .describe("Sales tax amount"),
@@ -789,7 +808,7 @@ export const CreateBillInputSchema = z.object({
     description: z.string().optional().describe("Line description."),
     price: z.string().describe("Unit price as decimal string."),
     quantity: z.string().describe("Quantity as decimal string."),
-    sales_tax_rate: z.string().optional().describe("Sales tax rate as decimal (e.g. '0.20' for 20%).")
+    sales_tax_rate: OptionalSalesTaxRateSchema
   })).min(1).describe("Array of bill line items.")
 }).strict();
 
@@ -845,7 +864,7 @@ export const CreateEstimateInputSchema = z.object({
     description: z.string().describe("Item description."),
     price: z.string().describe("Price per unit."),
     quantity: z.string().describe("Quantity."),
-    sales_tax_rate: z.string().optional().describe("Sales tax rate (e.g. '0.20' for 20%).")
+    sales_tax_rate: OptionalSalesTaxRateSchema
   })).min(1).describe("Array of estimate line items.")
 }).strict();
 
@@ -900,7 +919,7 @@ export const CreatePriceListItemInputSchema = z.object({
   description: z.string().min(1).describe("Item description (shown on invoices)."),
   price: z.string().describe("Unit price as decimal string."),
   item_type: z.string().default("Products").describe("Item type (e.g. 'Products', 'Hours', 'Days')."),
-  sales_tax_rate: z.string().optional().describe("Sales tax rate as decimal (e.g. '0.20' for 20%)."),
+  sales_tax_rate: OptionalSalesTaxRateSchema,
   category: z.string().optional().describe("Category URL or nominal code.")
 }).strict();
 
@@ -990,9 +1009,7 @@ export const LogExpenseInputSchema = z.object({
     .length(3)
     .optional()
     .describe("Currency code (e.g. 'GBP', 'USD'). Defaults to the company's currency."),
-  sales_tax_rate: z.string()
-    .optional()
-    .describe("Sales tax rate as decimal (e.g. '0.20' for 20%)."),
+  sales_tax_rate: OptionalSalesTaxRateSchema,
   ec_status: z.enum(["UK/Non-EC", "EC Goods", "EC Services", "Reverse Charge"])
     .optional()
     .describe("EC status. Defaults to 'UK/Non-EC'."),
@@ -1452,7 +1469,7 @@ export const UpdateInvoiceItemSchema = z.object({
   description: z.string().optional(),
   price: z.string().optional().describe("Unit price (decimal string)"),
   quantity: z.string().optional().describe("Quantity (decimal string)"),
-  sales_tax_rate: z.string().optional().describe("Sales tax rate percentage (e.g. '20.0')"),
+  sales_tax_rate: OptionalSalesTaxRateSchema,
   sales_tax_status: z.enum(["TAXABLE", "EXEMPT", "OUT_OF_SCOPE"]).optional(),
   category: z.string().optional().describe("Category URL or nominal code for the line item")
 }).strict();
@@ -1482,7 +1499,7 @@ export const UpdateBillItemSchema = z.object({
   category: z.string().optional().describe("Category URL or nominal code"),
   description: z.string().optional(),
   total_value: z.string().optional().describe("Gross value of the line (decimal string)"),
-  sales_tax_rate: z.string().optional().describe("Sales tax rate percentage (e.g. '20.0')"),
+  sales_tax_rate: OptionalSalesTaxRateSchema,
   sales_tax_status: z.enum(["TAXABLE", "EXEMPT", "OUT_OF_SCOPE"]).optional()
 }).strict();
 
@@ -1531,7 +1548,7 @@ export const UpdatePriceListItemInputSchema = z.object({
   item_type: z.string().optional()
     .describe("Hours, Days, Weeks, Months, Years, Products, Services, Training, Expenses, Stock"),
   price: z.string().optional().describe("Unit price (decimal string)"),
-  sales_tax_rate: z.string().optional().describe("Sales tax rate percentage (e.g. '20.0')"),
+  sales_tax_rate: OptionalSalesTaxRateSchema,
   category: z.string().optional().describe("Category URL or nominal code")
 }).strict();
 

@@ -8,6 +8,15 @@ import {
   CreateInvoiceInputSchema,
   UpdateInvoiceInputSchema,
   ListExpensesInputSchema,
+  SalesTaxRateSchema,
+  CreateExpenseInputSchema,
+  UpdateExpenseInputSchema,
+  CreateBankTransactionExplanationInputSchema,
+  UpdateBankTransactionExplanationInputSchema,
+  CreateBillInputSchema,
+  CreateEstimateInputSchema,
+  CreatePriceListItemInputSchema,
+  LogExpenseInputSchema,
 } from "./index.js";
 import { SERVER_VERSION } from "../constants.js";
 
@@ -174,11 +183,53 @@ describe("UpdateInvoiceInputSchema", () => {
 });
 
 describe("version identity", () => {
-  it("SERVER_VERSION matches package.json at 1.2.1", () => {
+  it("SERVER_VERSION matches package.json at 1.2.2", () => {
     const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as {
       version: string;
     };
     expect(SERVER_VERSION).toBe(pkg.version);
-    expect(SERVER_VERSION).toBe("1.2.1");
+    expect(SERVER_VERSION).toBe("1.2.2");
   });
+});
+
+describe("SalesTaxRateSchema (percentage, not decimal fraction)", () => {
+  it.each(["20.0", "20", "5.0", "5", "0", "0.0", "17.5", "100"])("accepts %s", (v) => {
+    expect(SalesTaxRateSchema.safeParse(v).success).toBe(true);
+  });
+
+  it.each(["0.20", "0.2", "0.05", "0.5", "0.999"])("rejects decimal fraction %s", (v) => {
+    const r = SalesTaxRateSchema.safeParse(v);
+    expect(r.success).toBe(false);
+    expect(JSON.stringify(r.error?.issues)).toContain("percentage");
+  });
+
+  it.each(["abc", "-20", "20%", "", "120", "1e1"])("rejects malformed or out-of-range %s", (v) => {
+    expect(SalesTaxRateSchema.safeParse(v).success).toBe(false);
+  });
+
+  it("describes the percentage format for tool callers", () => {
+    expect(SalesTaxRateSchema.description).toContain("'20.0' for 20%");
+  });
+});
+
+describe("tool schemas route sales_tax_rate through the percentage validator", () => {
+  // Tools are registered via `.shape`, so the field-level schema is what validates input.
+  const shapes = {
+    CreateExpenseInputSchema: CreateExpenseInputSchema.shape.sales_tax_rate,
+    UpdateExpenseInputSchema: UpdateExpenseInputSchema.shape.sales_tax_rate,
+    CreateBankTransactionExplanationInputSchema: CreateBankTransactionExplanationInputSchema.shape.sales_tax_rate,
+    UpdateBankTransactionExplanationInputSchema: UpdateBankTransactionExplanationInputSchema.shape.sales_tax_rate,
+    CreatePriceListItemInputSchema: CreatePriceListItemInputSchema.shape.sales_tax_rate,
+    LogExpenseInputSchema: LogExpenseInputSchema.shape.sales_tax_rate,
+    CreateBillLineItem: CreateBillInputSchema.shape.bill_items.element.shape.sales_tax_rate,
+    CreateEstimateLineItem: CreateEstimateInputSchema.shape.estimate_items.element.shape.sales_tax_rate,
+  };
+
+  for (const [name, field] of Object.entries(shapes)) {
+    it(`${name}: accepts '20.0', allows omission, rejects '0.20'`, () => {
+      expect(field.safeParse("20.0").success).toBe(true);
+      expect(field.safeParse(undefined).success).toBe(true);
+      expect(field.safeParse("0.20").success).toBe(false);
+    });
+  }
 });

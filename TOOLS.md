@@ -484,7 +484,7 @@ Creates a new expense or mileage claim with optional receipt attachment.
 **For Regular Expenses:**
 - `gross_value` (string): Total amount including tax (decimal string)
 - `description` (string, optional): Description of the expense
-- `sales_tax_rate` (string, optional): Tax rate as decimal (e.g., '0.20' for 20%)
+- `sales_tax_rate` (string, optional): VAT rate as a percentage string (e.g. `"20.0"` for 20%). Decimal fractions such as `"0.20"` are rejected, because FreeAgent would record them as 0.2%.
 - `manual_sales_tax_amount` (string, optional): Manual tax amount
 - `currency` (string, optional): Currency code (GBP, USD, EUR, etc.)
 - `ec_status` (string, optional): 'EC Services', 'EC Goods', or 'Non-EC'
@@ -551,7 +551,7 @@ Intent bundle: log a regular expense in one call. Takes a **positive** `amount` 
 - `dated_on` (string, optional): Date in YYYY-MM-DD. Defaults to today.
 - `user` (string, optional): Email, numeric ID, or URL. Defaults to the sole user on the account.
 - `currency` (string, optional): Currency code.
-- `sales_tax_rate` (string, optional): Decimal rate (e.g. `"0.20"` for 20%).
+- `sales_tax_rate` (string, optional): Percentage string (e.g. `"20.0"` for 20%). Decimal fractions such as `"0.20"` are rejected.
 - `ec_status` (string, optional): Defaults to `"UK/Non-EC"`.
 - `receipt_reference` (string, optional)
 - `project` (string, optional): Project URL or ID.
@@ -824,7 +824,7 @@ Explains (categorizes) a bank transaction by linking it to invoices, bills, or c
 - `project` (string): Associated project
 
 **Tax Information:**
-- `sales_tax_rate` (string): Tax rate as decimal
+- `sales_tax_rate` (string): Tax rate as a percentage string (e.g. `"20.0"`)
 - `sales_tax_value` (string): Tax amount
 
 **Attachment:**
@@ -1173,7 +1173,7 @@ Creates a new supplier bill to record money owed.
   - `description` (string, optional): Line description
   - `price` (string): Unit price
   - `quantity` (string): Quantity
-  - `sales_tax_rate` (string, optional): e.g. `"0.20"` for 20%
+  - `sales_tax_rate` (string, optional): percentage string, e.g. `"20.0"` for 20%
 
 **Optional:**
 - `due_on` (string): Due date (YYYY-MM-DD)
@@ -1343,7 +1343,7 @@ Creates a new catalog item reusable on invoices and estimates.
 - `description` (string, required): Item description
 - `price` (string, required): Unit price
 - `item_type` (string, default: "Products"): e.g. `"Products"`, `"Hours"`, `"Days"`
-- `sales_tax_rate` (string, optional): Decimal rate (e.g. `"0.20"` for 20%)
+- `sales_tax_rate` (string, optional): Percentage string (e.g. `"20.0"` for 20%). Decimal fractions such as `"0.20"` are rejected.
 - `category` (string, optional): Category URL or nominal code
 
 **Example usage:**

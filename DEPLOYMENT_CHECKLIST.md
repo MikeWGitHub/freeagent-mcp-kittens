@@ -41,7 +41,7 @@ Set these in Vercel Dashboard → Settings → Environment Variables:
    {
      "status": "ok",
      "service": "freeagent-mcp-server",
-     "version": "1.2.1",
+     "version": "1.2.2",
      "oauth_mode": "jwt-stateless",
      "static_bearer": false,
      "freeagent_environment": "sandbox"
