@@ -245,6 +245,7 @@ const args = (input: Record<string, unknown>) =>
 
 let logSpy: ReturnType<typeof vi.spyOn>;
 beforeEach(() => {
+  vi.stubEnv("FREEAGENT_ENABLE_DELETE", "true");
   logSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
@@ -361,7 +362,7 @@ describe("deleteBankTransaction: refusals change nothing", () => {
   it("refuses an explained transaction without delete_explanations and warns about the transfer partner", async () => {
     const { client, calls } = makeClient(fakeCounterpartWorld());
     await expect(deleteBankTransaction(client, args({ bank_transaction_id: "100000201" }))).rejects.toThrow(
-      /has 1 explanation\(s\).*transfer with .*274920 \(partner explanation 200000202\).*also affects the other account.*delete_explanations: true/s
+      /has 1 explanation\(s\).*transfer with .*900002 \(partner explanation 200000202\).*also affects the other account.*delete_explanations: true/s
     );
     noDeletes(calls);
   });

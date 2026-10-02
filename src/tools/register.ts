@@ -8,6 +8,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ElicitRequestFormParams, ElicitResult } from "@modelcontextprotocol/sdk/types.js";
 import { FreeAgentApiClient, formatErrorForLLM } from "../services/api-client.js";
+import { DELETE_TOOL_NAME, isDeleteEnabled } from "../services/feature-flags.js";
 import { listContacts, getContact, createContact } from "./contacts.js";
 import { listInvoices, getInvoice, createInvoice, updateInvoice } from "./invoices.js";
 import { listCreditNotes, getCreditNote } from "./credit-notes.js";
@@ -938,6 +939,14 @@ export function toolsForScope(
   return [...readTools, forceMarkedForReview(createExplanation)];
 }
 
+/**
+ * Drop tools that are off unless this machine opts in (v1.2.5). Today that's
+ * only freeagent_delete_bank_transaction: see services/feature-flags.ts.
+ */
+export function withOptInTools(catalog: ToolDefinition[], deleteEnabled: boolean = isDeleteEnabled()): ToolDefinition[] {
+  return deleteEnabled ? catalog : catalog.filter((tool) => tool.name !== DELETE_TOOL_NAME);
+}
+
 function metaToolsFor(catalog: ToolDefinition[]): ToolDefinition[] {
   return [
     {
@@ -975,7 +984,7 @@ export function registerAllTools(
     elicit: (params) => server.server.elicitInput(params),
   };
 
-  const catalog = toolsForScope(options?.scope ?? "full");
+  const catalog = withOptInTools(toolsForScope(options?.scope ?? "full"));
   const tools = isToolSearchMode() ? metaToolsFor(catalog) : catalog;
 
   for (const tool of tools) {

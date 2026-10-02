@@ -63,9 +63,19 @@ See [VERCEL_DEPLOYMENT.md](./VERCEL_DEPLOYMENT.md) for full instructions. Key po
 
 Required env vars: `FREEAGENT_CLIENT_ID`, `FREEAGENT_CLIENT_SECRET`, `JWT_SECRET`
 
+## Bank-transaction delete (off by default)
+
+`freeagent_delete_bank_transaction` permanently removes bank transactions, so it is only registered on machines that opt in:
+
+```bash
+export FREEAGENT_ENABLE_DELETE=true   # or create an empty .freeagent-enable-delete file in the server folder
+```
+
+The marker file is gitignored, so it survives `git pull` and rebuilds but never travels with the repo. `FREEAGENT_ENABLE_DELETE=false` turns the tool off even when the file exists. Without either, the catalog has 88 tools.
+
 ## Tool-Search Mode (optional)
 
-By default the server registers every catalog tool directly, which makes all 89 tool definitions part of the MCP client's `tools/list` response. For clients with many connected MCP servers — where tool-definition tokens add up quickly — set:
+By default the server registers every catalog tool directly, which makes all 89 tool definitions (88 without the delete opt-in) part of the MCP client's `tools/list` response. For clients with many connected MCP servers — where tool-definition tokens add up quickly — set:
 
 ```bash
 export FREEAGENT_TOOL_SEARCH=true
@@ -168,7 +178,7 @@ The full catalog is still reachable — it's just loaded on demand. This mirrors
 | `freeagent_reconcile_bank_transaction` | **Intent bundle**: explain a transaction with a category name / invoice ref / bill ref | No |
 | `freeagent_upload_bank_statement` | Upload statement rows (`confirm: true`; verifies import) | No |
 | `freeagent_delete_bank_transaction_explanation` | Delete an explanation only — never the bank transaction (`confirm: true`) | No |
-| `freeagent_delete_bank_transaction` | Delete a bank transaction (`confirm: true` + `reason`; manual only unless `allow_imported` + `duplicate_of`; `delete_explanations` removes explanations first; verifies the final state) | No |
+| `freeagent_delete_bank_transaction` | Delete a bank transaction (`confirm: true` + `reason`; manual only unless `allow_imported` + `duplicate_of`; `delete_explanations` removes explanations first; verifies the final state). **Off by default:** opt in per machine with `FREEAGENT_ENABLE_DELETE=true` or an empty `.freeagent-enable-delete` file in the server folder | No |
 
 ### Projects & tasks
 | Tool | Description | Read-only |

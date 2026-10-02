@@ -26,3 +26,6 @@ logs
 *.log
 .vercel
 *.patch
+
+# Per-machine opt-in for freeagent_delete_bank_transaction (v1.2.5)
+.freeagent-enable-delete

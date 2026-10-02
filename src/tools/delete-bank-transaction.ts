@@ -53,6 +53,7 @@ import { isNotFoundError } from "../services/api-client.js";
 import type { DeleteBankTransactionInput } from "../schemas/index.js";
 import type { FreeAgentBankTransactionExplanation } from "../types.js";
 import { extractIdFromUrl } from "../services/formatter.js";
+import { DELETE_DISABLED_MESSAGE, isDeleteEnabled } from "../services/feature-flags.js";
 
 type ExplanationForDelete = FreeAgentBankTransactionExplanation & {
   bank_account?: string;
@@ -500,6 +501,12 @@ export async function deleteBankTransaction(
     throw new Error(
       `freeagent_delete_bank_transaction isn't available on the hosted deployment yet. Use the local server. ${NOTHING_DELETED}`
     );
+  }
+
+  // Off unless this machine opts in (v1.2.5). The tool is normally not even
+  // registered when disabled; this guards any other route to the handler.
+  if (!isDeleteEnabled()) {
+    throw new Error(`${DELETE_DISABLED_MESSAGE} ${NOTHING_DELETED}`);
   }
 
   let checked: Checked;

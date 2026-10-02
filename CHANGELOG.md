@@ -2,6 +2,12 @@
 
 All notable changes to this fork are documented here. Versions are git tags; see GitHub Releases for full notes.
 
+## [1.2.5] - 2026-10-02
+
+- **`freeagent_delete_bank_transaction` is now off by default.** Each machine opts in with `FREEAGENT_ENABLE_DELETE=true` (or `1`) in the MCP server's environment, or an empty `.freeagent-enable-delete` file in the server folder (gitignored, so it survives `git pull` and rebuilds but never travels with the repo). `FREEAGENT_ENABLE_DELETE=false` turns it off even if the file exists. A fresh clone, such as an unattended bookkeeping agent's, never gets the tool by accident, and a lost setting fails safe.
+  - When off, the tool isn't registered at all (direct or tool-search mode), and the handler refuses before any API call if reached another way.
+- Tests: 10 new (331 total).
+
 ## [1.2.4] - 2026-10-02
 
 - **New tool: `freeagent_delete_bank_transaction`.** Replaces the old "never delete a bank transaction" rule with a guarded delete. Needed on 2 Oct 2026 to remove FreeAgent-created `///` transfer counterparts (FreeAgent invents a manual transaction in the other account when one side of a transfer is explained while the real other side is already explained) and feed/statement-upload duplicates. Reviewed in three independent Claude rounds and two Grok rounds before release; Grok's prefix-match blocker and seven other findings fixed, one nit (block project-tagged explanations) declined because a project tag is reporting only and `delete_explanations` already lists every explanation removed.
