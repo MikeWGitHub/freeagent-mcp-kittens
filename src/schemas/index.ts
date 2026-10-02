@@ -1257,6 +1257,21 @@ export const DeleteBankTransactionExplanationInputSchema = z.object({
     .describe("Must be exactly true. Acknowledges this permanently deletes the explanation (unlinking any transfer pairing).")
 }).strict();
 
+export const DeleteBankTransactionInputSchema = z.object({
+  bank_transaction_id: z.string().trim().min(1)
+    .describe("Bank transaction numeric ID or full .../v2/bank_transactions/:id URL to delete."),
+  confirm: z.literal(true)
+    .describe("Must be exactly true. Acknowledges this permanently deletes the bank transaction and changes the account's FreeAgent balance."),
+  reason: z.string().trim().min(10)
+    .describe("Why this transaction should not exist, e.g. 'FreeAgent-created transfer counterpart; the real pair is 100000301' or 'Duplicate of 100000103 from a statement upload'. Echoed in the reply and the server log."),
+  allow_imported: z.boolean().default(false)
+    .describe("Must be true to delete a transaction that came from the bank feed or a statement upload, and then duplicate_of is required. Leave false for manual transactions. Use only for genuine duplicates."),
+  duplicate_of: z.string().trim().min(1).optional()
+    .describe("Required with allow_imported: the ID or URL of the imported transaction this one duplicates (the copy to keep). Checked before anything changes: same account, same amount, dated within 3 days, identical description after removing spaces and punctuation, and it must still exist. Optional for a manual transaction: then only account, amount and date window are checked, and the reply says so."),
+  delete_explanations: z.boolean().default(false)
+    .describe("FreeAgent only deletes unexplained transactions. Set true to remove this transaction's explanations first. Deleting a transfer explanation also affects the partner transaction in the other account. Every explanation (and a transfer's partner explanation) is re-read in full and refused if it carries a paid_* link (invoice, bill, user and so on), an asset, stock, property or rebill link, is_deletable: false, a receipt attachment, or a lock other than the structural locks every transfer explanation has.")
+}).strict();
+
 export type ListJournalSetsInput = z.infer<typeof ListJournalSetsInputSchema>;
 export type GetJournalSetInput = z.infer<typeof GetJournalSetInputSchema>;
 export type CreateJournalSetInput = z.infer<typeof CreateJournalSetInputSchema>;
@@ -1264,6 +1279,7 @@ export type UpdateJournalSetInput = z.infer<typeof UpdateJournalSetInputSchema>;
 export type DeleteJournalSetInput = z.infer<typeof DeleteJournalSetInputSchema>;
 export type UploadBankStatementInput = z.infer<typeof UploadBankStatementInputSchema>;
 export type DeleteBankTransactionExplanationInput = z.infer<typeof DeleteBankTransactionExplanationInputSchema>;
+export type DeleteBankTransactionInput = z.infer<typeof DeleteBankTransactionInputSchema>;
 
 // ---------------------------------------------------------------------------
 // Credit notes (fork addition: read access to the other half of invoicing)

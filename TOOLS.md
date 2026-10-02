@@ -383,7 +383,7 @@ Create an invoice for contact [ID] dated today with [items]
 All tools include metadata annotations:
 
 - **readOnlyHint**: Whether the tool only reads data (true for list/get operations)
-- **destructiveHint**: Whether the tool deletes or overwrites data. True for `freeagent_delete_journal_set`, `freeagent_update_journal_set`, `freeagent_delete_bank_transaction_explanation`, `freeagent_delete_attachment`, and `freeagent_delete_note` — all of which require `confirm: true` and reply with an audit record of what was removed
+- **destructiveHint**: Whether the tool deletes or overwrites data. True for `freeagent_delete_journal_set`, `freeagent_update_journal_set`, `freeagent_delete_bank_transaction_explanation`, `freeagent_delete_bank_transaction`, `freeagent_delete_attachment`, and `freeagent_delete_note` — all of which require `confirm: true` and reply with an audit record of what was removed
 - **idempotentHint**: Whether repeated calls have the same effect (true for get operations, false for create)
 - **openWorldHint**: Whether the tool interacts with external systems (true for all API tools)
 
@@ -1447,7 +1447,7 @@ There is intentionally no `freeagent_update_contact` (rarely needed; manual corr
 
 ---
 
-## Fork Tools: Journal Sets, Statement Upload, Explanation Delete
+## Fork Tools: Journal Sets, Statement Upload, Explanation and Transaction Delete
 
 These are the fork's original headline additions (pre-dating the July 2026 coverage expansion) and were previously missing from this document entirely.
 
@@ -1459,3 +1459,4 @@ These are the fork's original headline additions (pre-dating the July 2026 cover
 | `freeagent_delete_journal_set` | Permanently delete a journal set and all its entries. Requires `confirm: true`; the reply records what was removed. |
 | `freeagent_upload_bank_statement` | Add bank transactions via statement upload. Requires `confirm: true`. FreeAgent silently de-duplicates rows matching an existing transaction's date+amount+description — supply a unique `fitid` or vary the description for deliberate same-day twins. The import is asynchronous, so the tool snapshots the date range beforehand, polls afterwards, and reports exactly which rows imported (paginated, so busy ranges verify correctly). |
 | `freeagent_delete_bank_transaction_explanation` | Delete a single explanation, returning its transaction to unexplained and breaking any transfer pairing. NEVER deletes bank transactions themselves. Requires `confirm: true`; the reply records what was removed. |
+| `freeagent_delete_bank_transaction` | Permanently delete a bank transaction (added Oct 2026). Built for FreeAgent-created `///` transfer counterparts and feed/statement-upload duplicates. All checks run before anything changes: `confirm: true` and a `reason` (at least 10 characters, echoed and logged); manual transactions only unless `allow_imported: true` with `duplicate_of` (the imported copy to keep: same account and amount, identical normalised description, within 3 days, still existing); URLs from another FreeAgent environment refused. FreeAgent only deletes unexplained transactions, so `delete_explanations: true` removes explanations first. Each explanation and any transfer partner explanation is re-read in full and refused if it carries a `paid_*`, asset, stock, property or rebill link, `is_deletable: false`, a receipt attachment, or a non-structural lock. Not atomic: FreeAgent can reject the final delete after explanations are removed, so every exit re-reads the transaction and reports its real state, the full pre-change records, and the transfer partner's state. Route: `DELETE /v2/bank_transactions/:id` only (the docs' singular route sits under an explanation-delete heading, so it is never used). |

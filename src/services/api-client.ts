@@ -27,6 +27,30 @@ export const RATE_LIMIT_DEFAULT_WAIT_MS = 30_000;
 /** Default per-request timeout; overridable via FREEAGENT_TIMEOUT_MS. */
 export const DEFAULT_TIMEOUT_MS = 30_000;
 
+/** Message for a FreeAgent 404, kept stable for callers and tests. */
+export const NOT_FOUND_MESSAGE =
+  "Resource not found. The requested item may have been deleted or the URL is incorrect.";
+
+/**
+ * An API error that keeps the HTTP status, so callers can branch on it
+ * instead of matching message text. Raised for 404s and for statuses without
+ * a dedicated message.
+ */
+export class ApiRequestError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+    this.name = "ApiRequestError";
+  }
+}
+
+export function isNotFoundError(error: unknown): boolean {
+  return error instanceof ApiRequestError && error.status === 404;
+}
+
+export function errorStatus(error: unknown): number | undefined {
+  return error instanceof ApiRequestError ? error.status : undefined;
+}
+
 function requestTimeoutMs(): number {
   const raw = Number(process.env.FREEAGENT_TIMEOUT_MS);
   return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_TIMEOUT_MS;
@@ -364,9 +388,7 @@ export class FreeAgentApiClient {
 
         // Not found
         if (status === 404) {
-          return new Error(
-            "Resource not found. The requested item may have been deleted or the URL is incorrect."
-          );
+          return new ApiRequestError(NOT_FOUND_MESSAGE, 404);
         }
 
         // Validation errors
@@ -413,10 +435,10 @@ export class FreeAgentApiClient {
 
         // Generic error with message
         if (data && data.message) {
-          return new Error(`API error: ${data.message}`);
+          return new ApiRequestError(`API error: ${data.message}`, status);
         }
 
-        return new Error(`API request failed with status ${status}`);
+        return new ApiRequestError(`API request failed with status ${status}`, status);
       }
 
       // Network or timeout errors

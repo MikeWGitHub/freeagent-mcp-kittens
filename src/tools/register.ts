@@ -38,6 +38,7 @@ import { listBankTransactionExplanations, getBankTransactionExplanation, createB
 import { reconcileBankTransaction } from "./reconcile.js";
 import { listJournalSets, getJournalSet, createJournalSet, updateJournalSet, deleteJournalSet } from "./journal-sets.js";
 import { uploadBankStatement, deleteBankTransactionExplanation } from "./statement-upload.js";
+import { deleteBankTransaction } from "./delete-bank-transaction.js";
 import { listProjects, getProject, createProject, updateProject } from "./projects.js";
 import { listTasks, getTask, createTask, updateTask } from "./tasks.js";
 import { listCategories, getCategory } from "./categories.js";
@@ -62,7 +63,7 @@ import {
   SearchToolsInputSchema, CallToolInputSchema,
   ListJournalSetsInputSchema, GetJournalSetInputSchema, CreateJournalSetInputSchema,
   UpdateJournalSetInputSchema, DeleteJournalSetInputSchema,
-  UploadBankStatementInputSchema, DeleteBankTransactionExplanationInputSchema,
+  UploadBankStatementInputSchema, DeleteBankTransactionExplanationInputSchema, DeleteBankTransactionInputSchema,
   ListCreditNotesInputSchema, GetCreditNoteInputSchema,
   ListCapitalAssetsInputSchema, GetCapitalAssetInputSchema, ListCapitalAssetTypesInputSchema,
   GetProfitAndLossInputSchema, GetBalanceSheetInputSchema, GetTrialBalanceInputSchema, GetCashflowInputSchema,
@@ -543,6 +544,14 @@ export const toolDefinitions: ToolDefinition[] = [
     inputSchema: DeleteBankTransactionExplanationInputSchema.shape,
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
     handler: deleteBankTransactionExplanation,
+  },
+  {
+    name: "freeagent_delete_bank_transaction",
+    title: "Delete FreeAgent Bank Transaction",
+    description: "Permanently delete a bank transaction, e.g. a FreeAgent-created '///' transfer counterpart or a duplicate import. Manual transactions only, unless allow_imported: true with duplicate_of naming the imported copy to keep (same account and amount, identical normalised description, within 3 days). Manual does not mean safe: accounts without a bank feed hold real manual transactions. Requires confirm: true and a reason. FreeAgent only deletes unexplained transactions: delete_explanations: true removes explanations first, which for a transfer also affects the partner transaction in the other account; refused if an explanation or transfer partner carries a paid_* or other link, a receipt attachment, or a non-structural lock. All checks run before anything changes, but the operation is not atomic: FreeAgent can still reject the final delete after explanations are removed, and the reply then reports the real state with full pre-change records. Confirm with the user before calling.",
+    inputSchema: DeleteBankTransactionInputSchema.shape,
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+    handler: deleteBankTransaction,
   },
 
   {

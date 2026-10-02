@@ -2,6 +2,22 @@
 
 All notable changes to this fork are documented here. Versions are git tags; see GitHub Releases for full notes.
 
+## [1.2.4] - 2026-10-02
+
+- **New tool: `freeagent_delete_bank_transaction`.** Replaces the old "never delete a bank transaction" rule with a guarded delete. Needed on 2 Oct 2026 to remove FreeAgent-created `///` transfer counterparts (FreeAgent invents a manual transaction in the other account when one side of a transfer is explained while the real other side is already explained) and feed/statement-upload duplicates. Reviewed in three independent Claude rounds and two Grok rounds before release; Grok's prefix-match blocker and seven other findings fixed, one nit (block project-tagged explanations) declined because a project tag is reporting only and `delete_explanations` already lists every explanation removed.
+  - Requires `confirm: true` and a `reason`, echoed in the reply and logged to stderr (signed attachment URLs stripped).
+  - Manual transactions only, unless `allow_imported: true` with `duplicate_of` naming the imported copy to keep. It must be in the same account, for the same amount, dated within 3 days, with an identical description after removing spaces and punctuation, and still exist. For a manual transaction, `duplicate_of` is optional and checked on account, amount and date only; the reply says so instead of calling it a duplicate. A URL from another FreeAgent environment (for example sandbox) is refused.
+  - Explanations are removed first only with `delete_explanations: true`. Every explanation, and a transfer's partner explanation, is re-read in full before anything changes. It is refused if it carries any `paid_*` link, an asset, stock, property or rebill link, `is_deletable: false`, a receipt attachment, `is_locked`, or locked attributes beyond the structural locks a transfer explanation has.
+  - The final delete isn't atomic. Once anything has changed, every exit re-reads the transaction and reports its real state (gone, still there, or unknown), the full pre-change records of everything removed or possibly removed, and the transfer partner's actual state. "Deleted" is reported only when a GET returns 404. An errored delete that succeeded on the server is detected, and so is a transaction FreeAgent removes along with its last explanation.
+  - Uses `DELETE /v2/bank_transactions/:id` only. The docs show a singular `/bank_transaction/:id` under a heading about deleting explanations, so that route is never called with a transaction ID.
+  - Advises re-explaining a transfer partner only when that partner still exists and is now unexplained.
+  - A receipt blocks the delete whether FreeAgent returns it as `attachment`, `attachment_count` or (from 1 Dec 2026, when the default payload changes) a non-empty `attachments` array.
+  - The reply says which way the account balance moves ("goes up by 35.00"), not "the reverse of -35.0".
+  - Annotated `idempotentHint: false`: a repeat call after a successful delete 404s and reports an error, so clients must not retry it automatically.
+- The tool refuses to run on the hosted (Vercel) deployment for now (60 s limit), and `freeagent_call_tool` refuses it in tool-search mode, so the client always asks the human before each call.
+- `api-client`: 404s and statuses without a dedicated message now raise `ApiRequestError` (same messages, plus `status`). `isNotFoundError()`, `errorStatus()` and `NOT_FOUND_MESSAGE` are exported, so callers don't have to match message text.
+- Tests: 47 new (321 total). The test fake now behaves like FreeAgent: a transaction with explanations can't be deleted, an explanation delete 404s once it's gone, and the unexplained amount is recomputed from what's left.
+
 ## [1.2.3] - 2026-09-26
 
 Fixes from an independent review of v1.2.2 (Grok), each checked against the FreeAgent API docs and live behaviour before changing.

@@ -6,7 +6,7 @@ A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for the
 
 ## Features
 
-- **88 FreeAgent tools**: contacts, invoices (incl. transitions, updates, and discounts), credit notes, estimates, bills, recurring invoices, price list items, expenses, timeslips, projects, tasks, bank accounts, bank transaction explanations, journals, accounting reports (P&L / balance sheet / trial balance / cashflow), general ledger, capital assets, statutory returns (read-only), stock, attachments, notes, categories, company info, and users
+- **89 FreeAgent tools**: contacts, invoices (incl. transitions, updates, and discounts), credit notes, estimates, bills, recurring invoices, price list items, expenses, timeslips, projects, tasks, bank accounts, bank transaction explanations, journals, accounting reports (P&L / balance sheet / trial balance / cashflow), general ledger, capital assets, statutory returns (read-only), stock, attachments, notes, categories, company info, and users
 - **Intent-bundle tools**: `reconcile_bank_transaction`, `log_expense`, and `invoice_from_timeslips` collapse multi-call sequences into single tool calls and resolve human-friendly hints (names, codes, references) to FreeAgent URLs server-side
 - **Optional tool-search mode** (`FREEAGENT_TOOL_SEARCH=true`): collapses the tool catalog behind two meta-tools (`freeagent_search_tools`, `freeagent_call_tool`) so clients only pay the tool-definition token cost for tools they actually use
 - **MCP elicitation**: `create_invoice` falls back to a form elicitation when `contact` is omitted (on clients that support it)
@@ -65,7 +65,7 @@ Required env vars: `FREEAGENT_CLIENT_ID`, `FREEAGENT_CLIENT_SECRET`, `JWT_SECRET
 
 ## Tool-Search Mode (optional)
 
-By default the server registers every catalog tool directly, which makes all 88 tool definitions part of the MCP client's `tools/list` response. For clients with many connected MCP servers — where tool-definition tokens add up quickly — set:
+By default the server registers every catalog tool directly, which makes all 89 tool definitions part of the MCP client's `tools/list` response. For clients with many connected MCP servers — where tool-definition tokens add up quickly — set:
 
 ```bash
 export FREEAGENT_TOOL_SEARCH=true
@@ -82,7 +82,7 @@ The full catalog is still reachable — it's just loaded on demand. This mirrors
 
 ## Available Tools
 
-88 catalog tools. See [TOOLS.md](./TOOLS.md) for per-tool parameters and examples. Summary:
+89 catalog tools. See [TOOLS.md](./TOOLS.md) for per-tool parameters and examples. Summary:
 
 ### Contacts
 | Tool | Description | Read-only |
@@ -168,6 +168,7 @@ The full catalog is still reachable — it's just loaded on demand. This mirrors
 | `freeagent_reconcile_bank_transaction` | **Intent bundle**: explain a transaction with a category name / invoice ref / bill ref | No |
 | `freeagent_upload_bank_statement` | Upload statement rows (`confirm: true`; verifies import) | No |
 | `freeagent_delete_bank_transaction_explanation` | Delete an explanation only — never the bank transaction (`confirm: true`) | No |
+| `freeagent_delete_bank_transaction` | Delete a bank transaction (`confirm: true` + `reason`; manual only unless `allow_imported` + `duplicate_of`; `delete_explanations` removes explanations first; verifies the final state) | No |
 
 ### Projects & tasks
 | Tool | Description | Read-only |

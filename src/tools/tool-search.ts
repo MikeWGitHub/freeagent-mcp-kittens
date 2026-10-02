@@ -188,6 +188,14 @@ export async function searchTools(
 }
 
 /**
+ * Destructive tools that must stay registered directly, so the MCP client asks
+ * the human before each call. Through freeagent_call_tool a client that has
+ * "always allowed" the dispatcher would run them unprompted, and the target's
+ * confirm: true is filled in by the model, so it is no human gate.
+ */
+export const DIRECT_ONLY_TOOLS = new Set(["freeagent_delete_bank_transaction"]);
+
+/**
  * Handler for freeagent_call_tool. Validates arguments against the target
  * tool's Zod schema and dispatches to its handler.
  */
@@ -204,6 +212,13 @@ export async function callTool(
     throw new Error(
       `Unknown tool '${name}'. Use freeagent_search_tools to discover tool names. ` +
         `First few available: ${available}…`
+    );
+  }
+
+  if (DIRECT_ONLY_TOOLS.has(name)) {
+    throw new Error(
+      `${name} can't be called through freeagent_call_tool, because the client would not ask for ` +
+        `approval on each call. Run the server without FREEAGENT_TOOL_SEARCH to use it. Nothing was changed.`
     );
   }
 

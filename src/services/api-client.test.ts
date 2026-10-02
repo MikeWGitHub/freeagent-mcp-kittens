@@ -6,6 +6,9 @@ import {
   RATE_LIMIT_MAX_RETRIES,
   RATE_LIMIT_MAX_WAIT_MS,
   RATE_LIMIT_DEFAULT_WAIT_MS,
+  ApiRequestError,
+  isNotFoundError,
+  NOT_FOUND_MESSAGE,
 } from "./api-client.js";
 
 interface MockAxiosInstance {
@@ -82,6 +85,33 @@ describe("FreeAgentApiClient", () => {
 
       const result = await client.post<{ contact: { url: string } }>("/contacts", { contact: {} });
       expect(result.data.contact.url).toContain("/contacts/2");
+    });
+  });
+
+  describe("404 handling", () => {
+    const axios404 = () => ({ isAxiosError: true, response: { status: 404, data: {}, headers: {} } });
+
+    it("raises ApiRequestError with status 404 for GET and DELETE", async () => {
+      const mockAxios = await getMockAxios();
+      mockAxios.get.mockRejectedValueOnce(axios404());
+      mockAxios.delete.mockRejectedValueOnce(axios404());
+
+      const getError = await client.get("/bank_transactions/1").catch((e: unknown) => e);
+      const deleteError = await client.delete("/bank_transaction/1").catch((e: unknown) => e);
+      for (const error of [getError, deleteError]) {
+        expect(error).toBeInstanceOf(ApiRequestError);
+        expect((error as ApiRequestError).status).toBe(404);
+        expect((error as Error).message).toBe(NOT_FOUND_MESSAGE);
+        expect(isNotFoundError(error)).toBe(true);
+      }
+    });
+
+    it("does not treat other statuses or plain errors as not found", async () => {
+      const mockAxios = await getMockAxios();
+      mockAxios.get.mockRejectedValueOnce({ isAxiosError: true, response: { status: 500, data: {}, headers: {} } });
+      const error = await client.get("/bank_transactions/1").catch((e: unknown) => e);
+      expect(isNotFoundError(error)).toBe(false);
+      expect(isNotFoundError(new Error(NOT_FOUND_MESSAGE))).toBe(false);
     });
   });
 

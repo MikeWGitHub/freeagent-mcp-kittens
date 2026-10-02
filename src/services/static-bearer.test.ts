@@ -194,7 +194,7 @@ describe("toolsForScope", () => {
 
   it("full registers the entire catalog", () => {
     expect(toolsForScope("full")).toHaveLength(toolDefinitions.length);
-    expect(toolDefinitions).toHaveLength(88);
+    expect(toolDefinitions).toHaveLength(89);
   });
 
   it("forces marked_for_review true on read_draft create explanation regardless of input", async () => {
