@@ -183,18 +183,33 @@ describe("UpdateInvoiceInputSchema", () => {
 });
 
 describe("version identity", () => {
-  it("SERVER_VERSION matches package.json at 1.2.5", () => {
+  it("SERVER_VERSION matches package.json at 1.2.6", () => {
     const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as {
       version: string;
     };
     expect(SERVER_VERSION).toBe(pkg.version);
-    expect(SERVER_VERSION).toBe("1.2.5");
+    expect(SERVER_VERSION).toBe("1.2.6");
   });
 });
 
 describe("SalesTaxRateSchema (percentage, not decimal fraction)", () => {
   it.each(["20.0", "20", "5.0", "5", "0", "0.0", "17.5", "100"])("accepts %s", (v) => {
     expect(SalesTaxRateSchema.safeParse(v).success).toBe(true);
+  });
+
+  it.each(["Auto", "auto", "AUTO", " aUtO "])("accepts %s and normalises to 'Auto'", (v) => {
+    const r = SalesTaxRateSchema.safeParse(v);
+    expect(r.success).toBe(true);
+    expect(r.data).toBe("Auto");
+  });
+
+  it("keeps numeric percentage strings unchanged", () => {
+    expect(SalesTaxRateSchema.parse("20.0")).toBe("20.0");
+    expect(SalesTaxRateSchema.parse("0.0")).toBe("0.0");
+  });
+
+  it.each(["Automatic", "autox", "au to"])("rejects non-Auto words %s", (v) => {
+    expect(SalesTaxRateSchema.safeParse(v).success).toBe(false);
   });
 
   it.each(["0.20", "0.2", "0.05", "0.5", "0.999"])("rejects decimal fraction %s", (v) => {
@@ -226,8 +241,10 @@ describe("tool schemas route sales_tax_rate through the percentage validator", (
   };
 
   for (const [name, field] of Object.entries(shapes)) {
-    it(`${name}: accepts '20.0', allows omission, rejects '0.20'`, () => {
+    it(`${name}: accepts '20.0', '0.0', 'auto', allows omission, rejects '0.20'`, () => {
       expect(field.safeParse("20.0").success).toBe(true);
+      expect(field.safeParse("0.0").success).toBe(true);
+      expect(field.safeParse("auto").data).toBe("Auto");
       expect(field.safeParse(undefined).success).toBe(true);
       expect(field.safeParse("0.20").success).toBe(false);
     });

@@ -178,7 +178,11 @@ export async function getBankTransactionExplanation(
 
       // Tax information
       if (exp.sales_tax_rate) {
-        lines.push(`- **Sales Tax Rate**: ${parseFloat(exp.sales_tax_rate)}%`);
+        const rate = String(exp.sales_tax_rate);
+        const rateText = /^auto$/i.test(rate) || Number.isNaN(parseFloat(rate))
+          ? rate
+          : `${parseFloat(rate)}%`;
+        lines.push(`- **Sales Tax Rate**: ${rateText}`);
       }
       if (exp.sales_tax_value) {
         lines.push(`- **Sales Tax Value**: ${exp.sales_tax_value}`);

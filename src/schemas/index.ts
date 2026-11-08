@@ -10,14 +10,23 @@ import { ResponseFormat, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from "../constants.j
 // fraction such as "0.20" is accepted by the API but recorded as 0.2%, which
 // silently under-records VAT (seen on live explanations in Sep 2026). Values
 // strictly between 0 and 1 are therefore rejected rather than passed through.
+// The literal "Auto" (any case) lets FreeAgent pick the rate; it is normalised
+// to exactly "Auto" and passed through without numeric parsing (v1.2.6).
 export const SALES_TAX_RATE_DESCRIPTION =
-  "Sales tax (VAT) rate as a PERCENTAGE string: '20.0' for 20%, '5.0' for 5%, '0' for zero-rated. " +
+  "Sales tax (VAT) rate as a PERCENTAGE string: '20.0' for 20%, '5.0' for 5%, '0' for zero-rated, " +
+  "or 'Auto' to let FreeAgent choose the rate. " +
   "Do NOT send a decimal fraction: '0.20' would be recorded as 0.2% and is rejected.";
+
+const isAutoRate = (v: string) => v === "Auto";
 
 export const SalesTaxRateSchema = z.string()
   .trim()
-  .regex(/^\d{1,3}(\.\d+)?$/, "Sales tax rate must be a non-negative percentage such as '20.0'.")
+  .overwrite((v) => (/^auto$/i.test(v) ? "Auto" : v))
+  .refine((v) => isAutoRate(v) || /^\d{1,3}(\.\d+)?$/.test(v), {
+    message: "Sales tax rate must be 'Auto' or a non-negative percentage such as '20.0'.",
+  })
   .refine((v) => {
+    if (isAutoRate(v)) return true;
     const n = Number(v);
     return !(n > 0 && n < 1);
   }, {
@@ -25,7 +34,7 @@ export const SalesTaxRateSchema = z.string()
       "Sales tax rate looks like a decimal fraction. FreeAgent expects a percentage: " +
       "use '20.0' for 20%, '5.0' for 5%, '0' for zero-rated.",
   })
-  .refine((v) => Number(v) <= 100, {
+  .refine((v) => isAutoRate(v) || Number(v) <= 100, {
     message: "Sales tax rate is a percentage and cannot exceed 100 (e.g. '20.0').",
   })
   .describe(SALES_TAX_RATE_DESCRIPTION);
